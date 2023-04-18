@@ -4,7 +4,9 @@ import "core:mem/virtual"
 import "core:strings"
 import "core:os"
 import "core:mem"
+import "core:runtime"
 import "x86asm"
+import "core:sys/unix"
 jit :: proc(using vm: ^VM) -> Maybe(JitError) {
     using x86asm  
     asmm := initasm()
@@ -108,7 +110,15 @@ jit_prepare_locals :: proc(using function: ^Function, asmm: ^x86asm.Assembler) -
     jge(asmm, body)
 
     for arg, index in args {
-        register := (&([4]Reg64{Reg64.Rcx, Reg64.Rdx, Reg64.R8, Reg64.R9}))[index];
+        register := Reg64.Rax
+        when os.OS == runtime.Odin_OS_Type.Linux {
+            register = (&[]Reg64{Reg64.Rdi, Reg64.Rsi, Reg64.Rdx, Reg64.Rcx, Reg64.R8, Reg64.R9 })[index];
+        }
+        else {
+            register = (&([4]Reg64{Reg64.Rcx, Reg64.Rdx, Reg64.R8, Reg64.R9}))[index];
+        }
+        append(&asmm.bytes, 0x90)
+        append(&asmm.bytes, 0x90)
         mov_to(asmm, Reg64.Rbp, register, cast(i32)res[index])
     }
     return res, cast(i64)offset
@@ -298,7 +308,8 @@ jit_null_check :: proc(asmm: ^x86asm.Assembler, ptr: x86asm.Reg64, t1: x86asm.Re
 out_of_bounds :: proc "c" (i: i64) {
     context = ctx
     for len(stacktrace) > 0 {
-        frame := stack_trace_pop()
+        frame :StackFrame= {}
+        stack_trace_pop(&frame)
         fmt.printf("at %v.%v\n", frame.fn.module.name, frame.fn.name)
     }
     panic(fmt.aprint("INDEX", i, "OUT OF BOUNDS\n"))
@@ -585,7 +596,8 @@ jit_compile_lt :: proc(asmm: ^x86asm.Assembler, stack: ^TypeStack, vm: ^VM) {
 nullref :: proc "c" (module: string) {
     context = ctx
     for len(stacktrace) > 0 {
-        frame := stack_trace_pop()
+        frame :StackFrame= {}
+        stack_trace_pop(&frame)
         fmt.printf("at %v.%v\n", frame.fn.module.name, frame.fn.name)
     }
     panic("NULL REF")
@@ -805,18 +817,34 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             type := stack_pop(stack)
             stack_push(stack, type)
 
-            push(asmm, Reg64.R10)
-            push(asmm, Reg64.R10)
-            mov(asmm, Reg64.Rcx, transmute(u64)vm)
-            mov(asmm, Reg64.Rdx, transmute(u64)type)
-            mov(asmm, Reg32.Eax, 32)
-            sub(asmm, Reg64.Rsp, Reg64.Rax)
-            mov(asmm, Reg64.Rax, transmute(u64)box_obj)
-            call_reg(asmm, Reg64.Rax)
-            mov(asmm, Reg32.Edx, 32)
-            add(asmm, Reg64.Rsp, Reg64.Rdx)
-            pop(asmm, Reg64.R10)
-            pop(asmm, Reg64.R10)
+            when os.OS == runtime.Odin_OS_Type.Windows {
+                push(asmm, Reg64.R10)
+                push(asmm, Reg64.R10)
+                mov(asmm, Reg64.Rcx, transmute(u64)vm)
+                mov(asmm, Reg64.Rdx, transmute(u64)type)
+                mov(asmm, Reg32.Eax, 32)
+                sub(asmm, Reg64.Rsp, Reg64.Rax)
+                mov(asmm, Reg64.Rax, transmute(u64)box_obj)
+                call_reg(asmm, Reg64.Rax)
+                mov(asmm, Reg32.Edx, 32)
+                add(asmm, Reg64.Rsp, Reg64.Rdx)
+                pop(asmm, Reg64.R10)
+                pop(asmm, Reg64.R10)
+            }
+            else when os.OS == runtime.Odin_OS_Type.Linux {
+                push(asmm, Reg64.R10)
+                push(asmm, Reg64.R10)
+                mov(asmm, Reg64.Rdi, transmute(u64)vm)
+                mov(asmm, Reg64.Rsi, transmute(u64)type)
+                mov(asmm, Reg32.Eax, 32)
+                sub(asmm, Reg64.Rsp, Reg64.Rax)
+                mov(asmm, Reg64.Rax, transmute(u64)box_obj)
+                call_reg(asmm, Reg64.Rax)
+                mov(asmm, Reg32.Edx, 32)
+                add(asmm, Reg64.Rsp, Reg64.Rdx)
+                pop(asmm, Reg64.R10)
+                pop(asmm, Reg64.R10)
+            }
             mov(asmm, Reg64.Rcx, Reg64.Rax)
             jit_memcpy(asmm, get_type_size(type), Reg64.R10, Reg64.Rcx, -get_stack_size(stack), size_of(ObjectHeader))
             stack_pop(stack)
@@ -830,12 +858,18 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             stack_push(stack, box.(BoxedType).underlaying)
             jit_memcpy(asmm, get_type_size(box.(BoxedType).underlaying), Reg64.Rcx, Reg64.R10, size_of(ObjectHeader), -get_stack_size(stack)) 
         case .IsInstanceOf:
-            mov_from(asmm, Reg64.Rcx, Reg64.R10, -get_stack_size(stack))
+            firstArg := Reg64.Rcx
+            secondArg := Reg64.Rdx
+            when os.OS == runtime.Odin_OS_Type.Linux {
+                firstArg = Reg64.Rdi
+                secondArg = Reg64.Rsi
+            }
+            mov_from(asmm, firstArg, Reg64.R10, -get_stack_size(stack))
             stack_pop(stack)
             stack_push(stack, vm.primitiveTypes[PrimitiveType.Boolean])
 
             mov(asmm, Reg64.Rax, 0)
-            cmp(asmm, Reg64.Rcx, Reg64.Rax)
+            cmp(asmm, firstArg, Reg64.Rax)
             notnull := create_label(asmm)
             endofblock := create_label(asmm)
             jne(asmm, notnull)
@@ -843,8 +877,8 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             jmp(asmm, endofblock)
             
             set_label(asmm, notnull)
-            mov_from(asmm, Reg64.Rcx, Reg64.Rcx)
-            mov(asmm, Reg64.Rdx, transmute(u64)function.module.typedescriptors[instruction.operand])
+            mov_from(asmm, firstArg, firstArg)
+            mov(asmm, secondArg, transmute(u64)function.module.typedescriptors[instruction.operand])
             mov(asmm, Reg64.Rax, transmute(u64)type_equals)
             push(asmm, Reg64.R10)
             push(asmm, Reg64.R10)
@@ -879,8 +913,17 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
                 mov_to(asmm, Reg64.R10, Reg64.R8, -get_stack_size(stack))
             }
             else {
-                mov_from(asmm, Reg64.Rcx, Reg64.R8)
-                mov(asmm, Reg64.Rdx, transmute(u64)casttype)
+                when os.OS == runtime.Odin_OS_Type.Windows {
+                    mov_from(asmm, Reg64.Rcx, Reg64.R8)
+                    mov(asmm, Reg64.Rdx, transmute(u64)casttype)
+                }
+                else when os.OS == runtime.Odin_OS_Type.Linux {
+                    mov_from(asmm, Reg64.Rdi, Reg64.R8)
+                    mov(asmm, Reg64.Rsi, transmute(u64)casttype)
+                }
+                else {
+                    panic("")
+                }
                 mov(asmm, Reg64.Rax, transmute(u64)type_equals)
                 push(asmm, Reg64.R8)
                 push(asmm, Reg64.R10)
@@ -892,7 +935,6 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
 
                 pop(asmm, Reg64.R10)
                 pop(asmm, Reg64.R8)
-
                 mov_to(asmm, Reg64.R10, Reg64.R8, -get_stack_size(stack))
             }
             set_label(asmm, endofblock)
@@ -903,15 +945,25 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             if type_is(CustomType, type) {
                 panic("Not implemented")
             }
-            mov_from(asmm, Reg64.R8, Reg64.R10, -get_stack_size(stack))
+            push(asmm, Reg64.R10)
+            push(asmm, Reg64.R10)
+            when os.OS == runtime.Odin_OS_Type.Windows {
+                mov(asmm, Reg64.Rdx, transmute(u64)type)
+                mov(asmm, Reg64.Rcx, transmute(u64)vm)
+                mov_from(asmm, Reg64.R8, Reg64.R10, -get_stack_size(stack))
+            }
+            else when os.OS == runtime.Odin_OS_Type.Linux {
+                mov(asmm, Reg64.Rsi, transmute(u64)type)
+                mov(asmm, Reg64.Rdi, transmute(u64)vm)
+                mov_from(asmm, Reg64.Rdx, Reg64.R10, -get_stack_size(stack))
+            }
+            else {
+                panic("")
+            }
             lentype := stack_pop(stack)
             if lentype.(PrimitiveType) != PrimitiveType.I64 {
                 panic("Not implemented")
             }
-            push(asmm, Reg64.R10)
-            push(asmm, Reg64.R10)
-            mov(asmm, Reg64.Rdx, transmute(u64)type)
-            mov(asmm, Reg64.Rcx, transmute(u64)vm)
             mov(asmm, Reg32.Eax, 32)
             sub(asmm, Reg64.Rsp, Reg64.Rax)
             mov(asmm, Reg64.R11, transmute(u64)new_array)
@@ -923,21 +975,27 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             stack_push(stack, make_array(vm, type))
             mov_to(asmm, Reg64.R10, Reg64.Rax, -get_stack_size(stack))
         case .GetIndexRef:
-            mov_from(asmm, Reg64.Rcx, Reg64.R10, -get_stack_size(stack))
+            firstArg := Reg64.Rcx
+            secondArg := Reg64.Rdx
+            when os.OS == runtime.Odin_OS_Type.Linux {
+                firstArg = Reg64.Rdi
+                secondArg = Reg64.Rsi
+            }
+            mov_from(asmm, firstArg, Reg64.R10, -get_stack_size(stack))
             indextype := stack_pop(stack)
-            mov_from(asmm, Reg64.Rdx, Reg64.R10, -get_stack_size(stack))
+            mov_from(asmm, secondArg, Reg64.R10, -get_stack_size(stack))
             type := stack_pop(stack)
             if indextype.(PrimitiveType) != PrimitiveType.I64 {
                 panic("Not implemented")
             }
-            jit_null_check(asmm, Reg64.Rdx)
-            mov_from(asmm, Reg64.R8, Reg64.Rdx, size_of(ObjectHeader))
+            jit_null_check(asmm, secondArg)
+            mov_from(asmm, Reg64.R8, secondArg, size_of(ObjectHeader))
             mov(asmm, Reg32.Eax, 0)
-            cmp(asmm, Reg64.Rcx, Reg64.Rax)
+            cmp(asmm, firstArg, Reg64.Rax)
             notout := create_label(asmm)
             out := create_label(asmm)
             jlt(asmm, out)
-            cmp(asmm, Reg64.Rcx, Reg64.R8)
+            cmp(asmm, firstArg, Reg64.R8)
             jge(asmm, out)
             jmp(asmm, notout)
             set_label(asmm, out)
@@ -946,12 +1004,12 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             set_label(asmm, notout)
             elemType := type.(ArrayType).underlaying
             mov(asmm, Reg32.R8d, cast(u32)get_type_size(elemType))
-            imul(asmm, Reg64.Rcx, Reg64.R8)
-            add(asmm, Reg64.Rcx, Reg64.Rdx)
+            imul(asmm, firstArg, Reg64.R8)
+            add(asmm, firstArg, secondArg)
             stack_push(stack, make_ref(vm, elemType))
-            mov(asmm, Reg64.Rdx, size_of(ObjectHeader) + 8)
-            add(asmm, Reg64.Rcx, Reg64.Rdx)
-            mov_to(asmm, Reg64.R10, Reg64.Rcx, -get_stack_size(stack))
+            mov(asmm, secondArg, size_of(ObjectHeader) + 8)
+            add(asmm, firstArg, secondArg)
+            mov_to(asmm, Reg64.R10, firstArg, -get_stack_size(stack))
         case .GetLength:
             mov_from(asmm, Reg64.Rdx, Reg64.R10, -get_stack_size(stack))
             type := stack_pop(stack)
@@ -960,7 +1018,17 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             mov_from(asmm, Reg64.Rdx, Reg64.Rdx, size_of(ObjectHeader))
             mov_to(asmm, Reg64.R10, Reg64.Rdx, -get_stack_size(stack))
         case .GetIndex:
-            mov_from(asmm, Reg64.Rcx, Reg64.R10, -get_stack_size(stack))
+            indexReg := Reg64.Rcx
+            when os.OS == runtime.Odin_OS_Type.Windows {
+                indexReg = Reg64.Rcx
+            }
+            else when os.OS == runtime.Odin_OS_Type.Linux {
+                indexReg = Reg64.Rdi
+            }
+            else {
+                panic("")
+            }
+            mov_from(asmm, indexReg, Reg64.R10, -get_stack_size(stack))
             indextype := stack_pop(stack)
             mov_from(asmm, Reg64.Rdx, Reg64.R10, -get_stack_size(stack))
             type := stack_pop(stack)
@@ -970,11 +1038,11 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             jit_null_check(asmm, Reg64.Rdx)
             mov_from(asmm, Reg64.R8, Reg64.Rdx, size_of(ObjectHeader))
             mov(asmm, Reg32.Eax, 0)
-            cmp(asmm, Reg64.Rcx, Reg64.Rax)
+            cmp(asmm, indexReg, Reg64.Rax)
             notout := create_label(asmm)
             out := create_label(asmm)
             jlt(asmm, out)
-            cmp(asmm, Reg64.Rcx, Reg64.R8)
+            cmp(asmm, indexReg, Reg64.R8)
             jge(asmm, out)
             jmp(asmm, notout)
             set_label(asmm, out)
@@ -988,13 +1056,23 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
                 elemType = vm.primitiveTypes[PrimitiveType.Char] 
             }
             mov(asmm, Reg32.R8d, cast(u32)get_type_size(elemType))
-            imul(asmm, Reg64.Rcx, Reg64.R8)
-            add(asmm, Reg64.Rcx, Reg64.Rdx)
+            imul(asmm, indexReg, Reg64.R8)
+            add(asmm, indexReg, Reg64.Rdx)
             stack_push(stack, elemType)
-            jit_memcpy(asmm, get_type_size(elemType), Reg64.Rcx, Reg64.R10, size_of(ObjectHeader) + 8, -get_stack_size(stack))
+            jit_memcpy(asmm, get_type_size(elemType), indexReg, Reg64.R10, size_of(ObjectHeader) + 8, -get_stack_size(stack))
         case .SetIndex:
 //             int3(asmm)
-            mov_from(asmm, Reg64.Rcx, Reg64.R10, -get_stack_size(stack))
+            indexReg := Reg64.Rcx
+            when os.OS == runtime.Odin_OS_Type.Windows {
+                indexReg = Reg64.Rcx
+            }
+            else when os.OS == runtime.Odin_OS_Type.Linux {
+                indexReg = Reg64.Rdi
+            }
+            else {
+                panic("")
+            }
+            mov_from(asmm, indexReg, Reg64.R10, -get_stack_size(stack))
             indextype := stack_pop(stack)
             mov_from(asmm, Reg64.Rdx, Reg64.R10, -get_stack_size(stack))
             type := stack_pop(stack)
@@ -1004,11 +1082,11 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             jit_null_check(asmm, Reg64.Rdx)
             mov_from(asmm, Reg64.R8, Reg64.Rdx, size_of(ObjectHeader))
             mov(asmm, Reg32.Eax, 0)
-            cmp(asmm, Reg64.Rcx, Reg64.Rax)
+            cmp(asmm, indexReg, Reg64.Rax)
             notout := create_label(asmm)
             out := create_label(asmm)
             jlt(asmm, out)
-            cmp(asmm, Reg64.Rcx, Reg64.R8)
+            cmp(asmm, indexReg, Reg64.R8)
             jge(asmm, out)
             jmp(asmm, notout)
             set_label(asmm, out)
@@ -1017,78 +1095,35 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             set_label(asmm, notout)
             elemType := type.(ArrayType).underlaying
             mov(asmm, Reg32.R8d, cast(u32)get_type_size(elemType))
-            imul(asmm, Reg64.Rcx, Reg64.R8)
-            add(asmm, Reg64.Rcx, Reg64.Rdx)
-            jit_memcpy(asmm, get_type_size(elemType), Reg64.R10, Reg64.Rcx, -get_stack_size(stack), size_of(ArrayHeader))
+            imul(asmm, indexReg, Reg64.R8)
+            add(asmm, indexReg, Reg64.Rdx)
+            jit_memcpy(asmm, get_type_size(elemType), Reg64.R10, indexReg, -get_stack_size(stack), size_of(ArrayHeader))
             stack_pop(stack)
         case .Call:
-            fnindex := cast(int)instruction.operand
-            fn: ^Function = nil
-            if fnindex < len(module.functionImports) {
-                fn = module.functionImports[fnindex] 
+            when os.OS == runtime.Odin_OS_Type.Windows {
+                jit_compile_call_win_abi(function, vm, instruction, asmm, stack)
+            }
+            else when os.OS == runtime.Odin_OS_Type.Linux {
+                jit_compile_call_systemv_abi(function, vm, instruction, asmm, stack)
             }
             else {
-                fn = module.functions[fnindex - len(module.functionImports)] 
-            }
-            if fn.name == "printchar" {
-//                 int3(asmm)
-            }
-            registers: []Reg64 = nil
-            if get_type_size(fn.retType) > 8 {
-                mov(asmm, Reg64.Rax, cast(u64)get_type_size(fn.retType))
-                sub(asmm, Reg64.Rsp, Reg64.Rax)
-                mov(asmm, Reg64.Rcx, Reg64.Rsp)
-                registers = (([]Reg64{Reg64.Rdx, Reg64.R8, Reg64.R9}));
-            }
-            else {
-                registers = ([]Reg64{Reg64.Rcx, Reg64.Rdx, Reg64.R8, Reg64.R9});
-            }
-            for arg, i in fn.args {
-                switch get_type_size(arg) {
-                    case 1:
-                        mov_from(asmm, cast(Reg8)registers[i], Reg64.R10, -get_stack_size(stack))
-                    case 2:
-                        mov_from(asmm, cast(Reg16)registers[i], Reg64.R10, -get_stack_size(stack))
-                    case 4:
-                        mov_from(asmm, cast(Reg32)registers[i], Reg64.R10, -get_stack_size(stack))
-                    case 8:
-                        mov_from(asmm, cast(Reg64)registers[i], Reg64.R10, -get_stack_size(stack))
-                    case:
-                        panic("FUCKSI")
-                } 
-                stack_pop(stack)
-            }
-            push(asmm, Reg64.R10)
-            push(asmm, Reg64.R10)
-            mov(asmm, Reg64.Rax, 32)
-            sub(asmm, Reg64.Rsp, Reg64.Rax)
-            mov(asmm, Reg64.Rax, transmute(u64)&fn.jmp_body.base)
-            call_at_reg(asmm, Reg64.Rax)
-            mov(asmm, Reg64.R15, 32)
-            add(asmm, Reg64.Rsp, Reg64.R15)
-            pop(asmm, Reg64.R10)
-            pop(asmm, Reg64.R10)
-            if !type_equals(fn.retType, vm.primitiveTypes[PrimitiveType.Void]) {
-                stack_push(stack, fn.retType)
-                size := get_type_size(fn.retType)
-                switch size {
-                    case 8:
-                        mov_to(asmm, Reg64.R10, Reg64.Rax, -get_stack_size(stack)) 
-                    case 4:
-                        mov_to(asmm, Reg64.R10, Reg32.Eax, -get_stack_size(stack)) 
-                    case 2:
-                        mov_to(asmm, Reg64.R10, Reg16.Ax, -get_stack_size(stack)) 
-                    case 1:
-                        mov_to(asmm, Reg64.R10, Reg8.Al, -get_stack_size(stack)) 
-                    case:
-                        panic("")
-                }
+                panic("Not IMPLEMENTED") 
             }
         case .Ret:
+            arg := Reg64.Rcx
+            when os.OS == runtime.Odin_OS_Type.Windows {
+                arg = Reg64.Rcx
+            }
+            else when os.OS == runtime.Odin_OS_Type.Linux {
+                arg = Reg64.Rdi
+            }
+            else {
+                panic("Not IMPLEMENTED") 
+            }
             push(asmm, Reg64.R10)
             mov(asmm, Reg64.Rax, 24)
             sub(asmm, Reg64.Rsp, Reg64.Rax)
-            mov(asmm, Reg64.Rcx, Reg64.Rsp)
+            mov(asmm, arg, 0)
             mov(asmm, Reg64.Rax, 32)
             sub(asmm, Reg64.Rsp, Reg64.Rax)
             mov(asmm, Reg64.Rax, transmute(u64)stack_trace_pop)
@@ -1099,6 +1134,9 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             if stack.count == 0 {
                 mov(asmm, Reg64.Rsp, Reg64.Rbp)
                 pop(asmm, Reg64.Rbp)
+//                 for reg in reverse(Reg64, []Reg64{Reg64.Rbx, Reg64.R10, Reg64.R11, Reg64.R12, Reg64.R13, Reg64.R14, Reg64.R15 }) {
+//                     pop(asmm, reg)   
+//                 }
                 ret(asmm)
             } 
             else {
@@ -1106,6 +1144,9 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
                 mov_from(asmm, Reg64.Rax, Reg64.R10, -size)
                 mov(asmm, Reg64.Rsp, Reg64.Rbp)
                 pop(asmm, Reg64.Rbp)
+//                 for reg in reverse(Reg64, []Reg64{Reg64.Rbx, Reg64.R10, Reg64.R11, Reg64.R12, Reg64.R13, Reg64.R14, Reg64.R15, Reg64.R15 }) {
+//                     pop(asmm, reg)   
+//                 }
                 ret(asmm)
             }
 
@@ -1114,22 +1155,165 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             panic("FUKIE WAKIE")
     }
 }
+reverse :: proc($T: typeid, arr: []T) -> []T {
+    s := 0
+    i := len(arr) - 1
+    for s < i {
+        t := arr[i]
+        arr[i] = arr[s]
+        arr[s] = t
+        s += 1
+        i -= 1
+    }
+    return arr
+}
 StackFrame :: struct {
     fn: ^Function,
     stack: [^]u8,
     stack_size: i64,
 }
 stacktrace := make([dynamic]StackFrame)
-stack_trace_add :: proc "c" (frame: StackFrame) {
+stack_trace_add :: proc "c" (frame: ^StackFrame) {
     context = ctx
-//     fmt.println(frame.fn.name)
-    append(&stacktrace, frame)
+//     fmt.println("Name", frame.fn.name)
+    append(&stacktrace, frame^)
 }
-stack_trace_pop :: proc "c" () -> StackFrame {
+stack_trace_pop :: proc "c" (out: ^StackFrame) {
     context = ctx
     res := stacktrace[len(stacktrace) - 1]
     remove_range(&stacktrace, len(stacktrace) - 1, len(stacktrace))    
-    return res
+    if out != nil {
+        out^ = res
+    }
+
+}
+jit_compile_call_systemv_abi :: proc(using function: ^Function, vm: ^VM, instruction: Instruction, asmm: ^x86asm.Assembler, stack: ^TypeStack) {
+    using x86asm
+    fnindex := cast(int)instruction.operand
+    fn: ^Function = nil
+    if fnindex < len(module.functionImports) {
+        fn = module.functionImports[fnindex] 
+    }
+    else {
+        fn = module.functions[fnindex - len(module.functionImports)] 
+    }
+    registers: []Reg64 = nil
+    if get_type_size(fn.retType) > 8 {
+        panic("")
+    }
+    else {
+        registers = ([]Reg64{Reg64.Rdi, Reg64.Rsi, Reg64.Rdx, Reg64.Rcx, Reg64.R8, Reg64.R9 });
+        
+    }
+    if fn.name == "mult" {
+//         int3(asmm)
+    }
+    for arg, i in fn.args {
+        switch get_type_size(arg) {
+            case 1:
+                mov_from(asmm, cast(Reg8)registers[i], Reg64.R10, -get_stack_size(stack))
+            case 2:
+                mov_from(asmm, cast(Reg16)registers[i], Reg64.R10, -get_stack_size(stack))
+            case 4:
+                mov_from(asmm, cast(Reg32)registers[i], Reg64.R10, -get_stack_size(stack))
+            case 8:
+                mov_from(asmm, cast(Reg64)registers[i], Reg64.R10, -get_stack_size(stack))
+            case:
+                panic("FUCKSI")
+        } 
+        stack_pop(stack)
+    }
+    push(asmm, Reg64.R10)
+    push(asmm, Reg64.R10)
+//     mov(asmm, Reg64.Rax, 32)
+//     sub(asmm, Reg64.Rsp, Reg64.Rax)
+    mov(asmm, Reg64.Rax, transmute(u64)&fn.jmp_body.base)
+    call_at_reg(asmm, Reg64.Rax)
+//     mov(asmm, Reg64.R15, 32)
+//     add(asmm, Reg64.Rsp, Reg64.R15)
+    pop(asmm, Reg64.R10)
+    pop(asmm, Reg64.R10)
+    if !type_equals(fn.retType, vm.primitiveTypes[PrimitiveType.Void]) {
+        stack_push(stack, fn.retType)
+        size := get_type_size(fn.retType)
+        switch size {
+            case 8:
+                mov_to(asmm, Reg64.R10, Reg64.Rax, -get_stack_size(stack)) 
+            case 4:
+                mov_to(asmm, Reg64.R10, Reg32.Eax, -get_stack_size(stack)) 
+            case 2:
+                mov_to(asmm, Reg64.R10, Reg16.Ax, -get_stack_size(stack)) 
+            case 1:
+                mov_to(asmm, Reg64.R10, Reg8.Al, -get_stack_size(stack)) 
+            case:
+                panic("")
+        }
+    }
+}
+jit_compile_call_win_abi :: proc(using function: ^Function, vm: ^VM, instruction: Instruction, asmm: ^x86asm.Assembler, stack: ^TypeStack) {
+    using x86asm
+    fnindex := cast(int)instruction.operand
+    fn: ^Function = nil
+    if fnindex < len(module.functionImports) {
+        fn = module.functionImports[fnindex] 
+    }
+    else {
+        fn = module.functions[fnindex - len(module.functionImports)] 
+    }
+    if fn.name == "printchar" {
+//                 int3(asmm)
+    }
+    registers: []Reg64 = nil
+    if get_type_size(fn.retType) > 8 {
+        mov(asmm, Reg64.Rax, cast(u64)get_type_size(fn.retType))
+        sub(asmm, Reg64.Rsp, Reg64.Rax)
+        mov(asmm, Reg64.Rcx, Reg64.Rsp)
+        registers = (([]Reg64{Reg64.Rdx, Reg64.R8, Reg64.R9}));
+    }
+    else {
+        registers = ([]Reg64{Reg64.Rcx, Reg64.Rdx, Reg64.R8, Reg64.R9});
+    }
+    for arg, i in fn.args {
+        switch get_type_size(arg) {
+            case 1:
+                mov_from(asmm, cast(Reg8)registers[i], Reg64.R10, -get_stack_size(stack))
+            case 2:
+                mov_from(asmm, cast(Reg16)registers[i], Reg64.R10, -get_stack_size(stack))
+            case 4:
+                mov_from(asmm, cast(Reg32)registers[i], Reg64.R10, -get_stack_size(stack))
+            case 8:
+                mov_from(asmm, cast(Reg64)registers[i], Reg64.R10, -get_stack_size(stack))
+            case:
+                panic("FUCKSI")
+        } 
+        stack_pop(stack)
+    }
+    push(asmm, Reg64.R10)
+    push(asmm, Reg64.R10)
+    mov(asmm, Reg64.Rax, 32)
+    sub(asmm, Reg64.Rsp, Reg64.Rax)
+    mov(asmm, Reg64.Rax, transmute(u64)&fn.jmp_body.base)
+    call_at_reg(asmm, Reg64.Rax)
+    mov(asmm, Reg64.R15, 32)
+    add(asmm, Reg64.Rsp, Reg64.R15)
+    pop(asmm, Reg64.R10)
+    pop(asmm, Reg64.R10)
+    if !type_equals(fn.retType, vm.primitiveTypes[PrimitiveType.Void]) {
+        stack_push(stack, fn.retType)
+        size := get_type_size(fn.retType)
+        switch size {
+            case 8:
+                mov_to(asmm, Reg64.R10, Reg64.Rax, -get_stack_size(stack)) 
+            case 4:
+                mov_to(asmm, Reg64.R10, Reg32.Eax, -get_stack_size(stack)) 
+            case 2:
+                mov_to(asmm, Reg64.R10, Reg16.Ax, -get_stack_size(stack)) 
+            case 1:
+                mov_to(asmm, Reg64.R10, Reg8.Al, -get_stack_size(stack)) 
+            case:
+                panic("")
+        }
+    }
 }
 jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
     using x86asm
@@ -1173,11 +1357,16 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
     
 
     a := initasm()
-//     int3(&a)
+    if function.name == "mult" {
+//         int3(&a)
+    }
+//     for reg in ([]Reg64{Reg64.Rbx, Reg64.R10, Reg64.R11, Reg64.R12, Reg64.R13, Reg64.R14, Reg64.R15, Reg64.R15 }) {
+//         push(&a, reg)   
+//     }
     push(&a, Reg64.Rbp)
     mov(&a, Reg64.Rbp, Reg64.Rsp)
     local, localssize := jit_prepare_locals(function, &a)
-    
+        
     stacksize: i64 = -128
     mov(&a, Reg64.R10, Reg64.Rsp) 
     mov(&a, Reg64.Rax, transmute(u64)stacksize)
@@ -1185,23 +1374,47 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
     for cb in codeblocks {
         labels[cb.start] = create_label(&a)
     }
-    push(&a, Reg64.R10)
-    mov(&a, Reg64.Rax, 24)
-    sub(&a, Reg64.Rsp, Reg64.Rax)
-    mov(&a, Reg64.Rcx, Reg64.Rsp)
-    mov(&a, Reg64.Rax, transmute(u64)function)
-    mov_to(&a, Reg64.Rcx, Reg64.Rax)
-    mov(&a, Reg64.Rax, Reg64.Rbp)
-    mov_to(&a, Reg64.Rcx, Reg64.Rax, 8)
-    mov(&a, Reg64.Rax, cast(u64)-(localssize + stacksize))
-    mov_to(&a, Reg64.Rcx, Reg64.Rax, 16)
-    mov(&a, Reg64.Rax, 32)
-    sub(&a, Reg64.Rsp, Reg64.Rax)
-    mov(&a, Reg64.Rax, transmute(u64)stack_trace_add)
-    call_reg(&a, Reg64.Rax)
-    mov(&a, Reg64.Rax, 24 + 32)
-    add(&a, Reg64.Rsp, Reg64.Rax)
-    pop(&a, Reg64.R10)
+    when os.OS == runtime.Odin_OS_Type.Windows {
+        push(&a, Reg64.R10)
+        mov(&a, Reg64.Rax, 24)
+        sub(&a, Reg64.Rsp, Reg64.Rax)
+        mov(&a, Reg64.Rcx, Reg64.Rsp)
+        mov(&a, Reg64.Rax, transmute(u64)function)
+        mov_to(&a, Reg64.Rcx, Reg64.Rax)
+        mov(&a, Reg64.Rax, Reg64.Rbp)
+        mov_to(&a, Reg64.Rcx, Reg64.Rax, 8)
+        mov(&a, Reg64.Rax, cast(u64)-(localssize + stacksize))
+        mov_to(&a, Reg64.Rcx, Reg64.Rax, 16)
+        mov(&a, Reg64.Rax, 32)
+        sub(&a, Reg64.Rsp, Reg64.Rax)
+        mov(&a, Reg64.Rax, transmute(u64)stack_trace_add)
+        call_reg(&a, Reg64.Rax)
+        mov(&a, Reg64.Rax, 24 + 32)
+        add(&a, Reg64.Rsp, Reg64.Rax)
+        pop(&a, Reg64.R10)
+    }
+    else when os.OS == runtime.Odin_OS_Type.Linux {
+        push(&a, Reg64.R10)
+        mov(&a, Reg64.Rax, 24)
+        sub(&a, Reg64.Rsp, Reg64.Rax)
+        mov(&a, Reg64.Rdi, Reg64.Rsp)
+        mov(&a, Reg64.Rax, transmute(u64)function)
+        mov_to(&a, Reg64.Rdi, Reg64.Rax)
+        mov(&a, Reg64.Rax, Reg64.Rbp)
+        mov_to(&a, Reg64.Rdi, Reg64.Rax, 8)
+        mov(&a, Reg64.Rax, cast(u64)-(localssize + stacksize))
+        mov_to(&a, Reg64.Rdi, Reg64.Rax, 16)
+        mov(&a, Reg64.Rax, 32)
+        sub(&a, Reg64.Rsp, Reg64.Rax)
+        mov(&a, Reg64.Rax, transmute(u64)stack_trace_add)
+        call_reg(&a, Reg64.Rax)
+        mov(&a, Reg64.Rax, 24 + 32)
+        add(&a, Reg64.Rsp, Reg64.Rax)
+        pop(&a, Reg64.R10)
+    }
+    else {
+        panic("")
+    }
 
     append(&a.bytes, 0x90, 0x90, 0x90, 0x90, 0x90)
     for _, cbi in codeblocks {
@@ -1216,8 +1429,8 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
         }
     }
     assemble(&a)
-//     fmt.println(function.name)
-//     print_bytes(a.bytes)
+    fmt.println(function.name)
+    print_bytes(a.bytes)
     function.jitted_body = alloc_executable(len(a.bytes))
     for b, index in a.bytes {
         function.jitted_body.base[index] = b
@@ -1947,15 +2160,11 @@ invalid_stack_on_jump :: proc(module: string, function: string, instruction: Ins
 not_all_code_paths_returns :: proc(module: string, function: string) -> JitError {
     return jit_error(JitErrorCode.NOT_ALL_CODE_PATHS_RETURNS, module, function, {}, 0)
 }
-alloc_executable :: proc(size: uint) -> ^virtual.Memory_Block {
-    data, err := virtual.memory_block_alloc(size, size, {})
-
-    if err != virtual.Allocator_Error.None {
-        panic("Failed to allocate executable memory")
-    }
-    ok := virtual.protect(data.base, data.reserved, { virtual.Protect_Flag.Read, virtual.Protect_Flag.Write, virtual.Protect_Flag.Execute})
-    if !ok {
-        panic("Failed to allocate executable memory")
-    }
-    return data
+MemBlock :: struct {
+    base: [^]u8,
+    size: uint,
+}
+alloc_executable :: proc(size: uint) -> MemBlock {
+    base := transmute([^]u8)unix.sys_mmap(nil, size, unix.PROT_READ | unix.PROT_EXEC | unix.PROT_WRITE, unix.MAP_ANONYMOUS | unix.MAP_PRIVATE, -1, 0)
+    return { base, size } 
 }

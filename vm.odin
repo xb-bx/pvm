@@ -5,7 +5,7 @@ import "core:fmt"
 import "core:mem"
 import "core:mem/virtual"
 import "core:runtime"
-import "core:sys/windows"
+// import "core:sys/windows"
 Tuple :: struct($T1, $T2: typeid) {
     first: T1,
     second: T2,
@@ -38,8 +38,8 @@ Function :: struct {
     retType: ^Type,
     instructions: []Instruction,
     module: ^Module,
-    jitted_body: ^virtual.Memory_Block, 
-    jmp_body: ^virtual.Memory_Block,
+    jitted_body: MemBlock, 
+    jmp_body: MemBlock,
 }
 Instruction :: struct {
     opcode: OpCode,
@@ -148,10 +148,10 @@ gc_alloc :: proc(using gc: ^GC, size: int) -> rawptr {
     return res 
 }
 gc_collect :: proc(using gc: ^GC) {
-    freq: windows.LARGE_INTEGER = {}
-    windows.QueryPerformanceFrequency(&freq)
-    start: windows.LARGE_INTEGER = {}
-    windows.QueryPerformanceCounter(&start)
+//     freq: windows.LARGE_INTEGER = {}
+//     windows.QueryPerformanceFrequency(&freq)
+//     start: windows.LARGE_INTEGER = {}
+//     windows.QueryPerformanceCounter(&start)
     for frame in stacktrace {
 // 
 //         framedata := transmute([^]int)(transmute(int)frame.stack - cast(int)frame.stack_size)
@@ -218,8 +218,8 @@ gc_collect :: proc(using gc: ^GC) {
         } 
         i += 1
     }
-    end: windows.LARGE_INTEGER = {}
-    windows.QueryPerformanceCounter(&end)
+//     end: windows.LARGE_INTEGER = {}
+//     windows.QueryPerformanceCounter(&end)
 //     fmt.println((end - start) * 1000000 / freq)
 //     fmt.println(gc_stat_free_mem(gc))
 //     fmt.println(alloced, freed)

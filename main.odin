@@ -2,15 +2,18 @@ package pvm
 import "core:log"
 import "core:fmt"
 import "core:os"
+import "core:sys/unix"
 import "core:bufio"
 import "core:io"
 import "core:strconv"
 import "core:mem"
 import "core:runtime"
 import "core:sys/windows"
+import "core:time"
 import "x86asm"
 import "core:math/rand"
 import "core:strings"
+import "core:unicode/utf16"
 type_formatter :: proc(fi: ^fmt.Info, arg: any, verb: rune) -> bool {
     if t, ok := arg.(Type); ok {
         switch type in t {
@@ -138,7 +141,7 @@ main :: proc() {
 //     fmt.println(type.size)
     jiterr := jit(&vm)
     if jiterr != nil {
-        fmt.println(jiterr)
+        fmt.println("Err = ", jiterr)
         return
     }
     mainFunction: ^Function = nil
@@ -292,24 +295,36 @@ main :: proc() {
         }
     }
     
-    handle := windows.GetStdHandle(windows.STD_OUTPUT_HANDLE)
-    mode: u32 = 0
-    windows.GetConsoleMode(handle, &mode) 
-    windows.SetConsoleMode(handle, mode | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING)
-    fnptr := cast(proc "cdecl" () -> i64)cast(rawptr)mainFunction.jitted_body.base
+    when os.OS == runtime.Odin_OS_Type.Windows {
+        handle := windows.GetStdHandle(windows.STD_OUTPUT_HANDLE)
+        mode: u32 = 0
+        windows.GetConsoleMode(handle, &mode) 
+        windows.SetConsoleMode(handle, mode | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+    }
+    fnptr := cast(proc "c" () -> i64)cast(rawptr)mainFunction.jitted_body.base
+    fmt.println("RUN", fnptr)
     fnptr()
-    
 }
 random :: proc "c" (min: i64, max: i64) -> i64 {
     context = ctx
     return min + (rand.int63() % (max - min))
 }
 getkeystate :: proc "c" (key: i64) -> i64 {
-    return cast(i64)windows.GetAsyncKeyState(cast(i32)key)
+    context = ctx
+    when os.OS == runtime.Odin_OS_Type.Linux {
+        panic("NOT IMPLEMENTED")
+    }
+    else {
+        return cast(i64)windows.GetAsyncKeyState(cast(i32)key)
+    }
+    return 0
 }
 println :: proc "c" (str: ^StringObject) {
     context = ctx
-    windows.WriteConsoleW(windows.GetStdHandle(windows.STD_OUTPUT_HANDLE), transmute(^u16)(transmute(u64)str + size_of(ObjectHeader) + 8), cast(u32)str.length, nil, nil)
+    s := strings.string_from_ptr(transmute(^byte)(transmute(int)str + size_of(StringObject)), cast(int)str.length)
+    fmt.println(s)
+ 
+//     windows.WriteConsoleW(windows.GetStdHandle(windows.STD_OUTPUT_HANDLE), transmute(^u16)(transmute(u64)str + size_of(ObjectHeader) + 8), cast(u32)str.length, nil, nil)
 }
 vmm: ^VM = nil
 gc_mem :: proc "c" () -> int {
@@ -323,7 +338,7 @@ inspect :: proc "c" (obj: ^ObjectHeader) {
     }
     fmt.println(obj.type)
     arr := cast(^ArrayHeader)obj
-    ptr := cast([^]i8)arr
+    ptr := cast([^]i8)transmute(rawptr)(transmute(int)arr + size_of(ArrayHeader))
     for i in 0..<arr.length {
         fmt.println(ptr[i+2])
     }
@@ -331,7 +346,7 @@ inspect :: proc "c" (obj: ^ObjectHeader) {
 
 }
 sleep :: proc(ms: u32) {
-    windows.Sleep(ms)
+    time.sleep(time.Duration(cast(i64)ms) * time.Millisecond)
 }
 clear :: proc() {
     fmt.print("\x1b[2J") 
