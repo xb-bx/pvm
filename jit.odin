@@ -2165,6 +2165,21 @@ MemBlock :: struct {
     size: uint,
 }
 alloc_executable :: proc(size: uint) -> MemBlock {
-    base := transmute([^]u8)unix.sys_mmap(nil, size, unix.PROT_READ | unix.PROT_EXEC | unix.PROT_WRITE, unix.MAP_ANONYMOUS | unix.MAP_PRIVATE, -1, 0)
-    return { base, size } 
+    when os.OS == runtime.Odin_OS_Type.Linux {
+        base := transmute([^]u8)unix.sys_mmap(nil, size, unix.PROT_READ | unix.PROT_EXEC | unix.PROT_WRITE, unix.MAP_ANONYMOUS | unix.MAP_PRIVATE, -1, 0)
+        return { base, size } 
+    }
+    else {
+        data, err := virtual.memory_block_alloc(size, size, {})
+
+        if err != virtual.Allocator_Error.None {
+            panic("Failed to allocate executable memory")
+        }
+        ok := virtual.protect(data.base, data.reserved, { virtual.Protect_Flag.Read, virtual.Protect_Flag.Write, virtual.Protect_Flag.Execute})
+        if !ok {
+            panic("Failed to allocate executable memory")
+        }
+        return {data.base, size} 
+    }
+
 }
