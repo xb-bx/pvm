@@ -133,6 +133,8 @@ main :: proc() {
     if _, ok := err.(None); !ok {
         fmt.println(err)
     }
+//     fmt.println("SIZE = ")
+//     fmt.println(get_type_size(mod.types["Point"]))
 //     type := mod.types["TestType"].(CustomType);
 //     fmt.println(type.size)
 //     for fld in type.fields {
@@ -321,7 +323,7 @@ getkeystate :: proc "c" (key: i64) -> i64 {
 }
 println :: proc "c" (str: ^StringObject) {
     context = ctx
-    s := strings.string_from_ptr(transmute(^byte)(transmute(int)str + size_of(StringObject)), cast(int)str.length)
+    s := strings.string_from_ptr(transmute(^byte)(transmute(int)str + size_of(StringObject)), cast(int)str.length * 2)
     fmt.println(s)
  
 //     windows.WriteConsoleW(windows.GetStdHandle(windows.STD_OUTPUT_HANDLE), transmute(^u16)(transmute(u64)str + size_of(ObjectHeader) + 8), cast(u32)str.length, nil, nil)

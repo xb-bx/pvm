@@ -64,7 +64,128 @@ stack_equals :: proc(t1: TypeStack, t2: TypeStack) -> bool {
     }
     return true
 }
-jit_prepare_locals :: proc(using function: ^Function, asmm: ^x86asm.Assembler) -> ([]int, i64) {
+
+jit_prepare_locals_systemv_abi :: proc(using function: ^Function, asmm: ^x86asm.Assembler) -> ([]int, i64) {
+    using x86asm  
+    res := make([]int, len(args) + len(locals))
+    args_classes := make([]bool, len(args)) // false -> register, true -> stack
+    avail_regs := 6
+    if get_type_size(retType) > 16 {
+        avail_regs = 5
+    }
+    stack_offsets := make([]int, len(args))
+    for arg, i in args {
+        if get_type_size(arg) > 16 || avail_regs == 0 {
+            args_classes[i] = true
+        }
+        else {
+            if get_type_size(arg) <= 8 {
+                args_classes[i] = false 
+                avail_regs -= 1
+            }
+            else if avail_regs >= 2 {
+                args_classes[i] = false
+                avail_regs -= 2
+            }
+            else {
+                args_classes[i] = true
+            }
+        }
+    }
+    i := len(args) - 1
+    stack_offset := 16
+    for i >= 0 {
+        if !args_classes[i] {
+            i -= 1 
+            continue
+        }
+        arg := args[i]
+        stack_offsets[i] = stack_offset
+        if get_type_size(arg) <= 8 {
+            stack_offset += 8
+        }
+        else {
+            stack_offset += get_type_size(arg)
+        }
+        i -= 1 
+    }
+    offset := 0
+    if get_type_size(retType) > 16 {
+        offset = -16
+    }
+    for arg, index in args {
+        typesize := get_type_size(arg)
+
+        if typesize > 16 || args_classes[index] {
+            res[index] = stack_offsets[index]    
+        }
+        else if typesize <= 8 {
+            typesize = 8
+            offset -= typesize
+            res[index] = offset 
+        }
+        else if typesize > 8 && typesize <= 16 {
+            typesize += 8 - (typesize % 8);
+            offset -= typesize
+            res[index] = offset 
+        }
+
+    }
+    for local, index in locals {
+        typesize := get_type_size(local)
+        if typesize < 8 {
+            typesize = 8
+        }
+        if typesize > 8 {
+            typesize += 8 - (typesize % 8) // allign by 8 byte boundary
+        }
+        offset -= typesize
+        res[len(args) + index] = offset 
+    }
+    offset -= 16 + (offset % 16) // allign by 16 byte boundary
+    mov(asmm, Reg64.R10, Reg64.Rsp)
+    mov(asmm, Reg64.Rax, 8)
+    sub(asmm, Reg64.R10, Reg64.Rax)
+    mov(asmm, Reg64.Rax, transmute(u64)offset)
+    add(asmm, Reg64.Rsp, Reg64.Rax)
+    cond := create_label(asmm)
+    body := create_label(asmm)
+    jmp(asmm, cond)
+    set_label(asmm, body)
+    
+    mov(asmm, Reg64.Rax, 0)
+    mov_to(asmm, Reg64.R10, Reg64.Rax)
+    mov(asmm, Reg64.Rax, 8)
+    sub(asmm, Reg64.R10, Reg64.Rax)
+    set_label(asmm, cond)
+    cmp(asmm, Reg64.R10, Reg64.Rsp)
+    jge(asmm, body)
+
+    regindex := 0
+    registers := (&[]Reg64{Reg64.Rdi, Reg64.Rsi, Reg64.Rdx, Reg64.Rcx, Reg64.R8, Reg64.R9 });
+    if get_type_size(retType) > 16 {
+        registers = (&[]Reg64{Reg64.Rsi, Reg64.Rdx, Reg64.Rcx, Reg64.R8, Reg64.R9 });
+    }
+    for arg, index in args {
+        if args_classes[index] {
+            continue
+        }
+        append(&asmm.bytes, 0x90)
+        append(&asmm.bytes, 0x90)
+        if get_type_size(arg) > 8 && get_type_size(arg) <= 16 {
+            mov_to(asmm, Reg64.Rbp, registers[regindex], cast(i32)res[index])
+            mov_to(asmm, Reg64.Rbp, registers[regindex+1], cast(i32)res[index] + 8)
+            regindex+=2
+        }
+        else if get_type_size(arg) <= 8 && regindex < len(registers) {
+            mov_to(asmm, Reg64.Rbp, registers[regindex], cast(i32)res[index])
+            regindex += 1
+        }
+
+    }
+    return res, cast(i64)offset
+}
+jit_prepare_locals_win_abi :: proc(using function: ^Function, asmm: ^x86asm.Assembler) -> ([]int, i64) {
     using x86asm  
     res := make([]int, len(args) + len(locals))
     offset := 0
@@ -111,17 +232,21 @@ jit_prepare_locals :: proc(using function: ^Function, asmm: ^x86asm.Assembler) -
 
     for arg, index in args {
         register := Reg64.Rax
-        when os.OS == runtime.Odin_OS_Type.Linux {
-            register = (&[]Reg64{Reg64.Rdi, Reg64.Rsi, Reg64.Rdx, Reg64.Rcx, Reg64.R8, Reg64.R9 })[index];
-        }
-        else {
-            register = (&([4]Reg64{Reg64.Rcx, Reg64.Rdx, Reg64.R8, Reg64.R9}))[index];
-        }
+        register = (&([4]Reg64{Reg64.Rcx, Reg64.Rdx, Reg64.R8, Reg64.R9}))[index];
         append(&asmm.bytes, 0x90)
         append(&asmm.bytes, 0x90)
         mov_to(asmm, Reg64.Rbp, register, cast(i32)res[index])
     }
     return res, cast(i64)offset
+}
+jit_prepare_locals :: proc(using function: ^Function, asmm: ^x86asm.Assembler) -> ([]int, i64) {
+    when os.OS == runtime.Odin_OS_Type.Windows {
+        return jit_prepare_locals_win_abi(function, asmm)
+    }
+    else when os.OS == runtime.Odin_OS_Type.Linux {
+        return jit_prepare_locals_systemv_abi(function, asmm)
+    }
+    panic("UNSUPORTED ABI")
 }
 get_stack_size :: proc(stack: ^TypeStack) -> i32 {
     size := 0
@@ -782,6 +907,7 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             jit_null_check(asmm, Reg64.Rcx)
             reftype := stack_pop(stack)
             field: ^Field = nil
+            fmt.print(stack.types)
             if type_is(RefType, reftype) {
                 field = reftype.(RefType).underlaying.(CustomType).fields[instruction.operand]
                 mov(asmm, Reg64.Rdx, transmute(u64)field.offset)
@@ -1133,21 +1259,47 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             pop(asmm, Reg64.R10)
             if stack.count == 0 {
                 mov(asmm, Reg64.Rsp, Reg64.Rbp)
+
                 pop(asmm, Reg64.Rbp)
-//                 for reg in reverse(Reg64, []Reg64{Reg64.Rbx, Reg64.R10, Reg64.R11, Reg64.R12, Reg64.R13, Reg64.R14, Reg64.R15 }) {
-//                     pop(asmm, reg)   
-//                 }
                 ret(asmm)
             } 
             else {
-                size := get_stack_size(stack)
-                mov_from(asmm, Reg64.Rax, Reg64.R10, -size)
-                mov(asmm, Reg64.Rsp, Reg64.Rbp)
-                pop(asmm, Reg64.Rbp)
-//                 for reg in reverse(Reg64, []Reg64{Reg64.Rbx, Reg64.R10, Reg64.R11, Reg64.R12, Reg64.R13, Reg64.R14, Reg64.R15, Reg64.R15 }) {
-//                     pop(asmm, reg)   
-//                 }
-                ret(asmm)
+                when os.OS == runtime.Odin_OS_Type.Windows {
+                    size := get_stack_size(stack)
+                    mov_from(asmm, Reg64.Rax, Reg64.R10, -size)
+                    mov(asmm, Reg64.Rsp, Reg64.Rbp)
+                    pop(asmm, Reg64.Rbp)
+                    ret(asmm)
+                }
+                else {
+                    size := get_stack_size(stack)
+                    retSize := get_type_size(retType)
+                    if retSize <= 8 {
+                        mov_from(asmm, Reg64.Rax, Reg64.R10, -size)
+                        mov(asmm, Reg64.Rsp, Reg64.Rbp)
+                        pop(asmm, Reg64.Rbp)
+                        ret(asmm)
+                    }
+                    else if retSize > 8 && retSize <= 16 {
+                        mov_from(asmm, Reg64.Rax, Reg64.R10, -size)
+                        mov_from(asmm, Reg64.Rdx, Reg64.R10, -size + 8)
+                        mov(asmm, Reg64.Rsp, Reg64.Rbp)
+                        pop(asmm, Reg64.Rbp)
+                        ret(asmm)
+                    }
+                    else {
+                        s: i32 = 0
+                        mov_from(asmm, Reg64.Rax, Reg64.Rbp, -8)
+                        for s < cast(i32)retSize {
+                            mov_from(asmm, Reg64.R11, Reg64.R10, -size + s)                        
+                            mov_to(asmm, Reg64.Rax, Reg64.R11, s)
+                            s += 8
+                        }
+                        mov(asmm, Reg64.Rsp, Reg64.Rbp)
+                        pop(asmm, Reg64.Rbp)
+                        ret(asmm)
+                    }
+                }
             }
 
         case: 
@@ -1191,46 +1343,136 @@ jit_compile_call_systemv_abi :: proc(using function: ^Function, vm: ^VM, instruc
     using x86asm
     fnindex := cast(int)instruction.operand
     fn: ^Function = nil
+
     if fnindex < len(module.functionImports) {
         fn = module.functionImports[fnindex] 
     }
     else {
         fn = module.functions[fnindex - len(module.functionImports)] 
     }
+    if fn.name == "testmany" {
+//          int3(asmm)
+    }
     registers: []Reg64 = nil
-    if get_type_size(fn.retType) > 8 {
-        panic("")
+    big_return := get_type_size(fn.retType) > 16
+    if big_return {
+        registers = ([]Reg64{Reg64.Rsi, Reg64.Rdx, Reg64.Rcx, Reg64.R8, Reg64.R9 });
     }
     else {
         registers = ([]Reg64{Reg64.Rdi, Reg64.Rsi, Reg64.Rdx, Reg64.Rcx, Reg64.R8, Reg64.R9 });
         
     }
-    if fn.name == "mult" {
-//         int3(asmm)
-    }
-    for arg, i in fn.args {
-        switch get_type_size(arg) {
+    //int3(asmm)
+    i := 0
+    regindex := 0
+    //args = fn.args
+    stack_args := make([dynamic]Tuple(^Type, i32))
+    defer delete(stack_args)
+    for i < len(fn.args) {
+        arg := fn.args[i]
+        if type_is_float(arg) {
+            panic("FLOAT NOT IMPLEMENTED")
+        }
+        size := get_type_size(arg)
+        switch size {
             case 1:
-                mov_from(asmm, cast(Reg8)registers[i], Reg64.R10, -get_stack_size(stack))
+                if regindex < len(registers) {
+                    mov_from(asmm, cast(Reg8)registers[regindex], Reg64.R10, -get_stack_size(stack))
+                }
+                else {
+                    append(&stack_args, tuple(arg, -get_stack_size(stack)))
+                }
             case 2:
-                mov_from(asmm, cast(Reg16)registers[i], Reg64.R10, -get_stack_size(stack))
+                if regindex < len(registers) {
+                    mov_from(asmm, cast(Reg16)registers[regindex], Reg64.R10, -get_stack_size(stack))
+                }
+                else {
+                    append(&stack_args, tuple(arg, -get_stack_size(stack)))
+                }
             case 4:
-                mov_from(asmm, cast(Reg32)registers[i], Reg64.R10, -get_stack_size(stack))
+                if regindex < len(registers) {
+                    mov_from(asmm, cast(Reg32)registers[regindex], Reg64.R10, -get_stack_size(stack))
+                }
+                else {
+                    append(&stack_args, tuple(arg, -get_stack_size(stack)))
+                }
             case 8:
-                mov_from(asmm, cast(Reg64)registers[i], Reg64.R10, -get_stack_size(stack))
+                if regindex < len(registers) {
+                    mov_from(asmm, cast(Reg64)registers[regindex], Reg64.R10, -get_stack_size(stack))
+                }
+                else {
+                    append(&stack_args, tuple(arg, -get_stack_size(stack)))
+                }
             case:
-                panic("FUCKSI")
-        } 
+                if size <= 16 {
+//                     int3(asmm)
+                    mov_from(asmm, registers[regindex], Reg64.R10, -get_stack_size(stack))
+                    mov_from(asmm, registers[regindex + 1], Reg64.R10, -get_stack_size(stack) + 8)
+                    regindex += 1
+                } 
+                else {
+                    append(&stack_args, tuple(arg, -get_stack_size(stack)))
+                } 
+        }
+        
         stack_pop(stack)
+        i += 1
+        regindex += 1
     }
     push(asmm, Reg64.R10)
     push(asmm, Reg64.R10)
+    i = len(stack_args) - 1
+    stack_size := 0
+    for a in stack_args {
+        stack_size += get_type_size(a.first, true)
+    }
+   
+
+    if big_return {
+        fmt.println("BIG RETURN")
+        mov(asmm, Reg64.R11, cast(u64)get_type_size(fn.retType))
+        sub(asmm, Reg64.Rsp, Reg64.R11)
+        mov(asmm, Reg64.Rdi, Reg64.Rsp)
+        stack_size += get_type_size(fn.retType)
+    }
+    if stack_size % 16 != 0 {
+        alignment := 16 - (stack_size % 16)
+        stack_size += alignment
+        mov(asmm, Reg64.R11, transmute(u64)(alignment))
+        sub(asmm, Reg64.Rsp, Reg64.R11)
+    }
+    st := stack_size
+    fmt.println("STACK ARGS", fn.name, len(stack_args), stack_args)
+    for i >= 0 && len(stack_args) >= 1 {
+        stack_arg := stack_args[i];
+        st += get_type_size(stack_arg.first, true)
+        argg := stack_arg.first
+        if get_type_size(argg) <= 8 {
+            mov_from(asmm, Reg64.R11, Reg64.R10, stack_arg.second)
+            push(asmm, Reg64.R11)
+        }
+        else {
+            mov(asmm, Reg64.R11, cast(u64)get_type_size(argg))
+            sub(asmm, Reg64.Rsp, Reg64.R11)
+            s: i32 = 0
+            for s <= cast(i32)get_type_size(argg) {
+                mov_from(asmm, Reg64.R11, Reg64.R10, stack_arg.second + s)
+                mov_to(asmm, Reg64.Rsp, Reg64.R11, s)
+                s += 8
+            }
+        }
+        i -= 1 
+
+    } 
 //     mov(asmm, Reg64.Rax, 32)
 //     sub(asmm, Reg64.Rsp, Reg64.Rax)
-    mov(asmm, Reg64.Rax, transmute(u64)&fn.jmp_body.base)
-    call_at_reg(asmm, Reg64.Rax)
+    mov(asmm, Reg64.Rax, 0)
+    mov(asmm, Reg64.R12, transmute(u64)&fn.jmp_body.base)
+    call_at_reg(asmm, Reg64.R12)
 //     mov(asmm, Reg64.R15, 32)
 //     add(asmm, Reg64.Rsp, Reg64.R15)
+    mov(asmm, Reg64.R11, cast(u64)stack_size)
+    add(asmm, Reg64.Rsp, Reg64.R11)
     pop(asmm, Reg64.R10)
     pop(asmm, Reg64.R10)
     if !type_equals(fn.retType, vm.primitiveTypes[PrimitiveType.Void]) {
@@ -1246,7 +1488,17 @@ jit_compile_call_systemv_abi :: proc(using function: ^Function, vm: ^VM, instruc
             case 1:
                 mov_to(asmm, Reg64.R10, Reg8.Al, -get_stack_size(stack)) 
             case:
-                panic("")
+                if size > 8 && size <= 16 {
+                    mov_to(asmm, Reg64.R10, Reg64.Rax, -get_stack_size(stack))
+                    mov_to(asmm, Reg64.R10, Reg64.Rdx, -get_stack_size(stack) + 8)
+                } else {
+                    s: i32 = 0
+                    for cast(int)s < size {
+                        mov_from(asmm, Reg64.R11, Reg64.Rax, s)
+                        mov_to(asmm, Reg64.R10, Reg64.R11, -get_stack_size(stack) + s)
+                        s += 8
+                    }
+                }
         }
     }
 }
@@ -1357,7 +1609,7 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
     
 
     a := initasm()
-    if function.name == "mult" {
+    if function.name == "testmany" {
 //         int3(&a)
     }
 //     for reg in ([]Reg64{Reg64.Rbx, Reg64.R10, Reg64.R11, Reg64.R12, Reg64.R13, Reg64.R14, Reg64.R15, Reg64.R15 }) {
@@ -1365,7 +1617,15 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
 //     }
     push(&a, Reg64.Rbp)
     mov(&a, Reg64.Rbp, Reg64.Rsp)
+    when os.OS == runtime.Odin_OS_Type.Linux {
+        if get_type_size(function.retType) > 16 {
+            push(&a, Reg64.Rdi)
+            push(&a, Reg64.Rdi)
+        }
+    }
     local, localssize := jit_prepare_locals(function, &a)
+    fmt.println("LOCALS = ")
+    fmt.println(local)
         
     stacksize: i64 = -128
     mov(&a, Reg64.R10, Reg64.Rsp) 
@@ -1423,9 +1683,12 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
             continue
         }
         set_label(&a, labels[cb.start])
-        for instr in cb.instructions {
-    append(&a.bytes, 0x90)
+        fmt.println(cb)
+        for instr, index in cb.instructions {
+            append(&a.bytes, 0x90)
             jit_compile_instruction(function, vm, instr, local, &a, &cb.stack, labels)
+//             if function.name == "modify" && index == 4 { int3(&a) }
+        
         }
     }
     assemble(&a)
@@ -1790,6 +2053,10 @@ calculate_stack :: proc(using function: ^Function, vm: ^VM, cb: ^CodeBlock, code
             if len(fn.args) > resultStack.count {
                 return not_enough_items_on_stack(function.module.name, function.name, instr, cb.start + index)
             }
+            fmt.println(resultStack)
+            fmt.println(fn.args)
+            fmt.println(fn.name)
+
             for arg in fn.args {
                 if !type_equals(arg, stack_pop(&resultStack)) {
                     return type_mismatch(function.module.name, function.name, instr, cb.start + index)

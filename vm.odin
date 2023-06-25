@@ -720,7 +720,7 @@ calculate_types :: proc(vm: ^VM, module: ^Module) -> ^Type {
     }
     return nil
 }
-get_type_size :: proc(type: ^Type) -> int {
+get_type_size :: proc(type: ^Type, primitive_aligned: bool = false) -> int {
     switch in type {
         case ArrayType, BoxedType, RefType:
             return 8
@@ -729,11 +729,11 @@ get_type_size :: proc(type: ^Type) -> int {
                 case .F64, .I64, .U64, .Any, .String:
                     return 8
                 case .F32, .I32, .U32:
-                    return 4
+                    return primitive_aligned ? 8 : 4
                 case .I16, .U16, .Char:
-                    return 2
+                    return primitive_aligned ? 8 : 2
                 case .I8, .U8, .Boolean:
-                    return 1
+                    return primitive_aligned ? 8 : 1
                 case .Void:
                     return 0
             }
@@ -770,6 +770,9 @@ calculate_type :: proc(type: ^Type) -> bool {
         }
         field.offset = size
         size += fieldsize
+    }
+    if size % 8 != 0 {
+        size += 8 - (size % 8)
     }
     (&type.(CustomType)).size = size
     return true
