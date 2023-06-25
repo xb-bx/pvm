@@ -89,4 +89,22 @@ sub_reg_reg :: proc(using assembler: ^Assembler, dest: Reg64, src: Reg64) {
     append(&bytes, opcode)
     append(&bytes, modrm)
 }
-sub :: proc {sub_reg_reg, sub_reg8_reg8, sub_reg16_reg16, sub_reg32_reg32 }
+sub_reg_imm32 :: proc(using assembler: ^Assembler, dest: Reg64, imm: i32) {
+    prefix: u8 = 0b01001000 
+    modrm: u8 = 0b11101000
+    opcode: u8 = 0x81
+    if cast(u8)dest > 7 {
+        prefix |= 1
+    }
+    modrm |= (cast(u8)dest % 8)
+    append(&bytes, prefix)
+    append(&bytes, opcode)
+    append(&bytes, modrm)
+
+    append(&bytes, cast(u8)(imm & 0xFF))
+    append(&bytes, cast(u8)((imm >> ((8 * 1))) & 0xFF))
+    append(&bytes, cast(u8)((imm >> ((8 * 2))) & 0xFF))
+    append(&bytes, cast(u8)((imm >> ((8 * 3))) & 0xFF))
+    
+}
+sub :: proc {sub_reg_reg, sub_reg8_reg8, sub_reg16_reg16, sub_reg32_reg32, sub_reg_imm32}
