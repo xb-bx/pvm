@@ -154,91 +154,24 @@ cmp_reg8_reg8 :: proc(using assembler: ^Assembler, r1: Reg8, r2: Reg8) {
 }
 //cmp r1, r2
 cmp_reg16_reg16 :: proc(using assembler: ^Assembler, r1: Reg16, r2: Reg16) {
-    prefix: u8 = 0 
-    modrm: u8 = 0b11000000
-    opcode: u8 = 0x39
-    if cast(u8)r2 > 7 
-    {
-        prefix |= 0x44
-    }
-    if cast(u8)r1 > 7
-    {
-        prefix |= 0x41
-    }
-    modrm |= ((cast(u8)r2 % 8) << 3)  
-    modrm |= (cast(u8)r1 % 8)  
-    append(&bytes, 0x66)
-    if prefix != 0 {
-        append(&bytes, prefix)
-    }
-    append(&bytes, opcode)
-    append(&bytes, modrm)
+    generic_instruction(assembler, nil, 0x66, 0x39, 0b11000000, cast(int)r1, cast(int)r2, 0, 0, ModRmMode.MR)
 }
 //cmp r1, r2
 cmp_reg32_reg32 :: proc(using assembler: ^Assembler, r1: Reg32, r2: Reg32) {
-    prefix: u8 = 0 
-    modrm: u8 = 0b11000000
-    opcode: u8 = 0x39
-    if cast(u8)r2 > 7 
-    {
-        prefix |= 0x44
-    }
-    if cast(u8)r1 > 7
-    {
-        prefix |= 0x41
-    }
-    modrm |= ((cast(u8)r2 % 8) << 3)  
-    modrm |= (cast(u8)r1 % 8)  
-    if prefix != 0 {
-        append(&bytes, prefix)
-    }
-    append(&bytes, opcode)
-    append(&bytes, modrm)
+    generic_instruction(assembler, nil, nil, 0x39, 0b11000000, cast(int)r1, cast(int)r2, 0, 0, ModRmMode.MR)
 }
 //cmp r1, r2
 cmp_reg64_reg64 :: proc(using assembler: ^Assembler, r1: Reg64, r2: Reg64) {
-    prefix: u8 = 0b01001000 
-    modrm: u8 = 0b11000000
-    opcode: u8 = 0x39
-    if cast(u8)r2 > 7 
-    {
-        prefix = prefix | 0b100
-    }
-    if cast(u8)r1 > 7
-    {
-        prefix = prefix | 0b1
-    }
-    modrm |= ((cast(u8)r2 % 8) << 3)  
-    modrm |= (cast(u8)r1 % 8)  
-    append(&bytes, prefix)
-    append(&bytes, opcode)
-    append(&bytes, modrm)
+    generic_instruction(assembler, 0x48, nil, 0x39, 0b11000000, cast(int)r1, cast(int)r2, 0, 0, ModRmMode.MR)
 }
 cmp :: proc {cmp_reg64_reg64, cmp_reg8_reg8, cmp_reg16_reg16, cmp_reg32_reg32 }
-// pop reg
 pop_reg64 :: proc(using assembler: ^Assembler, reg: Reg64) {
-    if cast(u8) reg > 7
-    {
-        append(&bytes, 0x41)
-    }
-    append(&bytes, 0x8f)
-    modrm: u8 = 0b11000000
-    modrm |= cast(u8)reg % 8
-    append(&bytes,modrm)
+    generic_instruction(assembler, nil, nil, 0x8f, 0b11000000, cast(int)reg, 0, 0, 0, ModRmMode.MI) 
 }
 pop :: proc{pop_reg64}
-// push reg
 push_reg64 :: proc(using assembler: ^Assembler, reg: Reg64) {
-    if cast(u8)reg > 7 
-    {
-        append(&bytes, 0x41)
-    }
-    append(&bytes, 0xff)
-    modrm: u8 = 0b11110000
-    modrm |= cast(u8)reg % 8
-    append(&bytes, modrm)
+    generic_instruction(assembler, nil, nil, 0xff, 0b11110000, cast(int)reg, 0, 0, 0, ModRmMode.MI) 
 }
-// push imm
 push_imm :: proc (using assembler: ^Assembler, imm: u32) 
 {
     append(&bytes, 0x68)
@@ -366,4 +299,55 @@ Reg8 :: enum {
     Dh,
     Bh,
 }
-
+ModRmMode :: enum {
+    MI,
+    MR,
+    RM,
+}
+generic_instruction :: proc(using asmm: ^Assembler, rex: Maybe(u8) = nil, old_prefix: Maybe(u8) = nil, opcode: u8, modrm: u8, reg1: int, reg2: int, imm: int, imm_size: int, modrmmode: ModRmMode) {
+    rex := rex.? or_else 0x40
+    reg1 := reg1
+    reg2 := reg2
+    imm := imm
+    modrm := modrm
+    if modrmmode == ModRmMode.MI || modrmmode == ModRmMode.MR {
+        if reg1 >= 8 {
+            rex |= 1 
+        }
+        reg1 = reg1 & 7
+        modrm |= cast(u8)reg1
+        if modrmmode == ModRmMode.MR {
+            if reg2 >= 8 {
+                rex |= 0b100
+            }
+            reg2 = reg2 & 7
+            modrm |= cast(u8)reg2 << 3
+        }
+    }
+    else {
+        if reg1 >= 8 {
+            rex |= 0b100 
+        }
+        reg1 = reg1 & 7
+        modrm |= cast(u8)reg1 << 3
+        if reg2 >= 8 {
+            rex |= 1 
+        }
+        reg2 = reg2 & 7
+        modrm |= cast(u8)reg2
+    }
+    if old, ok := old_prefix.?; ok {
+        append(&asmm.bytes, old)
+    }
+    if rex != 0x40 {
+        append(&asmm.bytes, rex)
+    }
+    append(&asmm.bytes, opcode)
+    append(&asmm.bytes, modrm)
+    if modrmmode == ModRmMode.MI {
+        for i in 0..=imm_size-1 {
+            append(&asmm.bytes, cast(u8)(imm & 0xff))
+            imm >>= 8
+        }
+    }
+}

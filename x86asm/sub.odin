@@ -35,76 +35,18 @@ sub_reg8_reg8 :: proc(using assembler: ^Assembler, dest: Reg8, src: Reg8) {
     append(&bytes, modrm)
 }
 sub_reg16_reg16 :: proc(using assembler: ^Assembler, dest: Reg16, src: Reg16) {
-    prefix: u8 = 0
-    modrm: u8 = 0b11000000
-    opcode: u8 = 0x29
-    if cast(u8)src > 7 {
-        prefix |= 0x44
-    }
-    if cast(u8)dest > 7 {
-        prefix |= 0x41
-    }
-    modrm |= (cast(u8)src % 8) << 3
-    modrm |= (cast(u8)dest % 8)
-    append(&bytes, 0x66)
-    if prefix != 0 {
-        append(&bytes, prefix)
-    }
-    append(&bytes, opcode)
-    append(&bytes, modrm)
+    generic_instruction(assembler, nil, 0x66, 0x29, 0b11000000, cast(int)dest, cast(int)src, 0, 0, ModRmMode.MR)
 }
 
 sub_reg32_reg32 :: proc(using assembler: ^Assembler, dest: Reg32, src: Reg32) {
-    prefix: u8 = 0
-    modrm: u8 = 0b11000000
-    opcode: u8 = 0x29
-    if cast(u8)src > 7 {
-        prefix |= 0x44
-    }
-    if cast(u8)dest > 7 {
-        prefix |= 0x41
-    }
-    modrm |= (cast(u8)src % 8) << 3
-    modrm |= (cast(u8)dest % 8)
-    if prefix != 0 {
-        append(&bytes, prefix)
-    }
-    append(&bytes, opcode)
-    append(&bytes, modrm)
+    generic_instruction(assembler, nil, nil, 0x29, 0b11000000, cast(int)dest, cast(int)src, 0, 0, ModRmMode.MR)
 }
 // sub dest, src
 sub_reg_reg :: proc(using assembler: ^Assembler, dest: Reg64, src: Reg64) {
-    prefix: u8 = 0b01001000 
-    modrm: u8 = 0b11000000
-    opcode: u8 = 0x29
-    if cast(u8)src > 7 {
-        prefix |= 0b100
-    }
-    if cast(u8)dest > 7 {
-        prefix |= 1
-    }
-    modrm |= (cast(u8)src % 8) << 3
-    modrm |= (cast(u8)dest % 8)
-    append(&bytes, prefix)
-    append(&bytes, opcode)
-    append(&bytes, modrm)
+    generic_instruction(assembler, 0x48, nil, 0x29, 0b11000000, cast(int)dest, cast(int)src, 0, 0, ModRmMode.MR)
 }
-sub_reg_imm32 :: proc(using assembler: ^Assembler, dest: Reg64, imm: i32) {
-    prefix: u8 = 0b01001000 
-    modrm: u8 = 0b11101000
-    opcode: u8 = 0x81
-    if cast(u8)dest > 7 {
-        prefix |= 1
-    }
-    modrm |= (cast(u8)dest % 8)
-    append(&bytes, prefix)
-    append(&bytes, opcode)
-    append(&bytes, modrm)
 
-    append(&bytes, cast(u8)(imm & 0xFF))
-    append(&bytes, cast(u8)((imm >> ((8 * 1))) & 0xFF))
-    append(&bytes, cast(u8)((imm >> ((8 * 2))) & 0xFF))
-    append(&bytes, cast(u8)((imm >> ((8 * 3))) & 0xFF))
-    
+sub_reg_imm32 :: proc(a: ^Assembler, dest: Reg64, imm: int)  {
+    generic_instruction(a, 0x48, nil, 0x81, 0b11101000, cast(int)dest, 0, imm, 4, ModRmMode.MI)
 }
 sub :: proc {sub_reg_reg, sub_reg8_reg8, sub_reg16_reg16, sub_reg32_reg32, sub_reg_imm32}
