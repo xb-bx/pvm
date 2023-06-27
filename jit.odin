@@ -230,12 +230,26 @@ jit_prepare_locals_win_abi :: proc(using function: ^Function, asmm: ^x86asm.Asse
     cmp(asmm, Reg64.R10, Reg64.Rsp)
     jge(asmm, body)
 
+    registers := (&[4]Reg64{Reg64.Rcx, Reg64.Rdx, Reg64.R8, Reg64.R9})[:]
     for arg, index in args {
-        register := Reg64.Rax
-        register = (&([4]Reg64{Reg64.Rcx, Reg64.Rdx, Reg64.R8, Reg64.R9}))[index];
+        if get_type_size(function.retType) > 8 {
+            registers = (&[3]Reg64{Reg64.Rdx, Reg64.R8, Reg64.R9})[:]
+        }
         append(&asmm.bytes, 0x90)
         append(&asmm.bytes, 0x90)
-        mov_to(asmm, Reg64.Rbp, register, cast(i32)res[index])
+        if (index > 3) || (index > 2 && len(registers) == 3) {
+            stack_index := (index > 2 && len(registers) == 3) ? index - 3: index -4 
+            mov_from(asmm, Reg64.Rdx, Reg64.Rsp, cast(i32)-(32 + stack_index * 8))
+            if get_type_size(arg) > 8 {
+                jit_memcpy(asmm, get_type_size(arg), Reg64.Rdx, Reg64.Rbp, 0, cast(i32)res[index])
+            }
+            else {
+                mov_to(asmm, Reg64.Rbp, Reg64.Rdx, cast(i32)res[index])
+            }
+        }  
+        else {
+            mov_to(asmm, Reg64.Rbp, registers[index], cast(i32)res[index])
+        }
     }
     return res, cast(i64)offset
 }
@@ -1266,10 +1280,22 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             else {
                 when os.OS == runtime.Odin_OS_Type.Windows {
                     size := get_stack_size(stack)
-                    mov_from(asmm, Reg64.Rax, Reg64.R10, -size)
-                    mov(asmm, Reg64.Rsp, Reg64.Rbp)
-                    pop(asmm, Reg64.Rbp)
-                    ret(asmm)
+                    retSize := get_type_size(function.retType)
+                    if retSize <= 8 {
+                        mov_from(asmm, Reg64.Rax, Reg64.R10, -size)
+                        mov(asmm, Reg64.Rsp, Reg64.Rbp)
+                        pop(asmm, Reg64.Rbp)
+                        ret(asmm)
+                    }
+                    else {
+                        s: i32 = 0
+                        mov_from(asmm, Reg64.R11, Reg64.Rbp, -8)
+                        jit_memcpy(asmm, retSize, Reg64.R10, Reg64.R11, -size, 0)
+                        mov(asmm, Reg64.Rax, Reg64.R11)
+                        mov(asmm, Reg64.Rsp, Reg64.Rbp)
+                        pop(asmm, Reg64.Rbp)
+                        ret(asmm)
+                    }
                 }
                 else {
                     size := get_stack_size(stack)
@@ -1512,42 +1538,87 @@ jit_compile_call_win_abi :: proc(using function: ^Function, vm: ^VM, instruction
     else {
         fn = module.functions[fnindex - len(module.functionImports)] 
     }
-    if fn.name == "printchar" {
-//                 int3(asmm)
-    }
+    allocated_stack := 0
+    mov(asmm, Reg64.R11, Reg64.Rsp)
     registers: []Reg64 = nil
     if get_type_size(fn.retType) > 8 {
-        mov(asmm, Reg64.Rax, cast(u64)get_type_size(fn.retType))
-        sub(asmm, Reg64.Rsp, Reg64.Rax)
+        size := get_type_size(fn.retType)
+        if size % 16 != 0 {
+            size += 16 - (size % 16)
+        }
+        allocated_stack += size
+        sub(asmm, Reg64.Rsp, size)
         mov(asmm, Reg64.Rcx, Reg64.Rsp)
         registers = (([]Reg64{Reg64.Rdx, Reg64.R8, Reg64.R9}));
     }
     else {
         registers = ([]Reg64{Reg64.Rcx, Reg64.Rdx, Reg64.R8, Reg64.R9});
     }
+    stack_args := make([dynamic]Tuple(^Type, i32))
+    avail_regs := len(registers)
     for arg, i in fn.args {
-        switch get_type_size(arg) {
-            case 1:
-                mov_from(asmm, cast(Reg8)registers[i], Reg64.R10, -get_stack_size(stack))
-            case 2:
-                mov_from(asmm, cast(Reg16)registers[i], Reg64.R10, -get_stack_size(stack))
-            case 4:
-                mov_from(asmm, cast(Reg32)registers[i], Reg64.R10, -get_stack_size(stack))
-            case 8:
-                mov_from(asmm, cast(Reg64)registers[i], Reg64.R10, -get_stack_size(stack))
-            case:
-                panic("FUCKSI")
-        } 
+        size := get_type_size(arg)
+        if(avail_regs > 0 ) {
+            switch size {
+                case 1:
+                    mov_from(asmm, cast(Reg8)registers[i], Reg64.R10, -get_stack_size(stack))
+                case 2:
+                    mov_from(asmm, cast(Reg16)registers[i], Reg64.R10, -get_stack_size(stack))
+                case 4:
+                    mov_from(asmm, cast(Reg32)registers[i], Reg64.R10, -get_stack_size(stack))
+                case 8:
+                    mov_from(asmm, cast(Reg64)registers[i], Reg64.R10, -get_stack_size(stack))
+                case:
+                    if size % 16 != 0 {
+                        size += 16 - (size % 16)
+                    }
+                    allocated_stack += size
+                    sub(asmm, Reg64.Rsp, size)
+                    mov(asmm, registers[i], Reg64.Rsp)
+                    jit_memcpy(asmm, size, Reg64.R10, Reg64.Rsp, -get_stack_size(stack), 0)
+
+            } 
+            avail_regs -= 1
+        }   
+        else {
+            if size <= 8 { 
+                append(&stack_args, tuple(arg, -get_stack_size(stack)))
+            } else {
+                if size % 16 != 0 {
+                    size += 16 - (size % 16)
+                }
+                allocated_stack += size
+                sub(asmm, Reg64.Rsp, size)
+                jit_memcpy(asmm, size, Reg64.R10, Reg64.Rsp, -get_stack_size(stack), 0)
+                append(&stack_args, tuple(arg, -get_stack_size(stack)))
+            }
+        }
         stack_pop(stack)
+    }
+    if len(stack_args) % 2 != 0 { // stack allignment
+        push(asmm, Reg64.Rax) 
+        allocated_stack += 8
     }
     push(asmm, Reg64.R10)
     push(asmm, Reg64.R10)
-    mov(asmm, Reg64.Rax, 32)
-    sub(asmm, Reg64.Rsp, Reg64.Rax)
+    i := 0
+    for i >= 0 && len(stack_args) >= 1 {
+        stack_arg := stack_args[i]
+        if get_type_size(stack_arg.first) <= 8 {
+            mov_from(asmm, Reg64.Rax, Reg64.R10, stack_arg.second)
+            push(asmm, Reg64.Rax)
+        }
+        else {
+            mov(asmm, Reg64.Rax, Reg64.R11)
+            sub(asmm, Reg64.Rax, cast(int)stack_arg.second) 
+            push(asmm, Reg64.Rax)
+        }
+        i -= 1
+    }
+    sub(asmm, Reg64.Rsp, 32)
     mov(asmm, Reg64.Rax, transmute(u64)&fn.jmp_body.base)
     call_at_reg(asmm, Reg64.Rax)
-    mov(asmm, Reg64.R15, 32)
-    add(asmm, Reg64.Rsp, Reg64.R15)
+    add(asmm, Reg64.Rsp, cast(i32)allocated_stack + 32)
     pop(asmm, Reg64.R10)
     pop(asmm, Reg64.R10)
     if !type_equals(fn.retType, vm.primitiveTypes[PrimitiveType.Void]) {
@@ -1563,7 +1634,9 @@ jit_compile_call_win_abi :: proc(using function: ^Function, vm: ^VM, instruction
             case 1:
                 mov_to(asmm, Reg64.R10, Reg8.Al, -get_stack_size(stack)) 
             case:
-                panic("")
+                // TODO: MAYBE USE R11
+                mov(asmm, Reg64.Rcx, Reg64.Rax)
+                jit_memcpy(asmm, size, Reg64.Rcx, Reg64.R10, 0, -get_stack_size(stack))
         }
     }
 }
@@ -1621,6 +1694,11 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
         if get_type_size(function.retType) > 16 {
             push(&a, Reg64.Rdi)
             push(&a, Reg64.Rdi)
+        }
+    } else when os.OS == runtime.Odin_OS_Type.Windows {
+        if get_type_size(function.retType) > 8 {
+            push(&a, Reg64.Rcx)
+            push(&a, Reg64.Rcx)
         }
     }
     local, localssize := jit_prepare_locals(function, &a)
