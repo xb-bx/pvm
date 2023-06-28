@@ -239,7 +239,7 @@ jit_prepare_locals_win_abi :: proc(using function: ^Function, asmm: ^x86asm.Asse
         append(&asmm.bytes, 0x90)
         if (index > 3) || (index > 2 && len(registers) == 3) {
             stack_index := (index > 2 && len(registers) == 3) ? index - 3: index -4 
-            mov_from(asmm, Reg64.Rdx, Reg64.Rsp, cast(i32)-(32 + stack_index * 8))
+            mov_from(asmm, Reg64.Rdx, Reg64.Rbp, cast(i32)(48 + stack_index * 8))
             if get_type_size(arg) > 8 {
                 jit_memcpy(asmm, get_type_size(arg), Reg64.Rdx, Reg64.Rbp, 0, cast(i32)res[index])
             }
@@ -1541,12 +1541,13 @@ jit_compile_call_win_abi :: proc(using function: ^Function, vm: ^VM, instruction
     allocated_stack := 0
     mov(asmm, Reg64.R11, Reg64.Rsp)
     registers: []Reg64 = nil
+    returnSize := 0
     if get_type_size(fn.retType) > 8 {
         size := get_type_size(fn.retType)
         if size % 16 != 0 {
             size += 16 - (size % 16)
         }
-        allocated_stack += size
+        returnSize = size
         sub(asmm, Reg64.Rsp, size)
         mov(asmm, Reg64.Rcx, Reg64.Rsp)
         registers = (([]Reg64{Reg64.Rdx, Reg64.R8, Reg64.R9}));
@@ -1590,7 +1591,7 @@ jit_compile_call_win_abi :: proc(using function: ^Function, vm: ^VM, instruction
                 allocated_stack += size
                 sub(asmm, Reg64.Rsp, size)
                 jit_memcpy(asmm, size, Reg64.R10, Reg64.Rsp, -get_stack_size(stack), 0)
-                append(&stack_args, tuple(arg, -get_stack_size(stack)))
+                append(&stack_args, tuple(arg, cast(i32)allocated_stack))
             }
         }
         stack_pop(stack)
@@ -1601,7 +1602,7 @@ jit_compile_call_win_abi :: proc(using function: ^Function, vm: ^VM, instruction
     }
     push(asmm, Reg64.R10)
     push(asmm, Reg64.R10)
-    i := 0
+    i := len(stack_args) - 1
     for i >= 0 && len(stack_args) >= 1 {
         stack_arg := stack_args[i]
         if get_type_size(stack_arg.first) <= 8 {
@@ -1637,6 +1638,7 @@ jit_compile_call_win_abi :: proc(using function: ^Function, vm: ^VM, instruction
                 // TODO: MAYBE USE R11
                 mov(asmm, Reg64.Rcx, Reg64.Rax)
                 jit_memcpy(asmm, size, Reg64.Rcx, Reg64.R10, 0, -get_stack_size(stack))
+                add(asmm, Reg64.Rsp, cast(i32)returnSize)
         }
     }
 }
@@ -1682,7 +1684,7 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
     
 
     a := initasm()
-    if function.name == "testmany" {
+    if function.name == "main" {
 //         int3(&a)
     }
 //     for reg in ([]Reg64{Reg64.Rbx, Reg64.R10, Reg64.R11, Reg64.R12, Reg64.R13, Reg64.R14, Reg64.R15, Reg64.R15 }) {
