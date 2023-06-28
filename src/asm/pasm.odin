@@ -1,5 +1,6 @@
 package pasm
-import "../."
+import "../pvm"
+
 import "core:os"
 import "core:bufio"
 import "core:io"
