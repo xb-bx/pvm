@@ -14,6 +14,20 @@ import "x86asm"
 import "core:math/rand"
 import "core:strings"
 import "core:unicode/utf16"
+import "core:c"
+
+when ODIN_OS == .Windows do foreign import econio "econio.lib"
+when ODIN_OS == .Linux do foreign import econio "econio.a"
+
+@(link_prefix="econio_")
+foreign {
+    rawmode :: proc() ---
+    normalmode :: proc() ---
+    kbhit :: proc() -> bool ---
+    getch :: proc() -> c.int ---
+}
+
+
 type_formatter :: proc(fi: ^fmt.Info, arg: any, verb: rune) -> bool {
     if t, ok := arg.(Type); ok {
         switch type in t {
@@ -106,6 +120,7 @@ flush :: proc "c" () {
 
 main :: proc() {
     using x86asm
+    rawmode()
     tracking := mem.Tracking_Allocator {};
     mem.tracking_allocator_init(&tracking, context.allocator);
     context.allocator = mem.tracking_allocator(&tracking);
@@ -157,6 +172,8 @@ main :: proc() {
     flushfn: ^Function = nil
     printlnfn: ^Function = nil
     gcmem: ^Function = nil
+    kbhitf: ^Function = nil
+    getchf: ^Function = nil
     for fn in mod.functions {
         if fn.name == "main" {
             mainFunction = fn
@@ -193,6 +210,26 @@ main :: proc() {
             }
             if fn.name == "flush" {
                 flushfn = fn
+            }
+            if fn.name == "kbhit" {
+                tasm := initasm()
+                kbh := kbhit
+                fnaddr := transmute(u64)(&kbh)
+                mov(&tasm, Reg64.Rax, fnaddr)
+                jmp_reg(&tasm, Reg64.Rax)
+                for b, i in tasm.bytes {
+                    fn.jmp_body.base[i] = b
+                }
+            }
+            if fn.name == "getch" {
+                tasm := initasm()
+                kbh := getch
+                fnaddr := transmute(u64)(&kbh)
+                mov(&tasm, Reg64.Rax, fnaddr)
+                jmp_reg(&tasm, Reg64.Rax)
+                for b, i in tasm.bytes {
+                    fn.jmp_body.base[i] = b
+                }
             }
         }
     }

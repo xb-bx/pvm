@@ -1,4 +1,4 @@
-module test 
+module snake 
 
 import builtins
 import fn flush from builtins
@@ -12,6 +12,8 @@ import fn rand from builtins
 import fn boolToI64 from builtins
 import fn printi32 from builtins
 import fn println from builtins
+import fn kbhit from builtins
+import fn getch from builtins
 
 
 type Point
@@ -593,31 +595,34 @@ fn pointEq (p1 &Point p2 &Point) bool
 end
 fn input(game *Game) void
     locals 
-        left i64
-        up i64
-        right i64
-        down i64
+        c char
     end
-    pushi64 37
-    setlocal left
-    pushi64 38
-    setlocal up
-    pushi64 39
-    setlocal right 
-    pushi64 40
-    setlocal down
-    
-    pushlocal left
-    call getkey
+
+    call kbhit
+    not
+    jtrue none
+
+    call getch
+    setlocal c
+
+    pushlocal c 
+    pushchar 'a'
+    eq
     jtrue left
-    pushlocal right
-    call getkey
+
+    pushlocal c 
+    pushchar 'd'
+    eq
     jtrue right 
-    pushlocal up 
-    call getkey
+    
+    pushlocal c 
+    pushchar 'w'
+    eq
     jtrue up 
-    pushlocal down 
-    call getkey
+
+    pushlocal c 
+    pushchar 's'
+    eq
     jtrue down
     jmp none
     :left

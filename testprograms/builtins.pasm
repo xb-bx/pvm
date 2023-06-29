@@ -1,5 +1,13 @@
 module builtins
 
+fn kbhit() bool
+    pushfalse
+    ret
+end
+fn getch() char
+    pushchar '0'
+    ret
+end
 fn gcmem() i64
 pushi64 1337
 ret

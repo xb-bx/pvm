@@ -1,6 +1,8 @@
 package nobuild
 import "core:fmt"
 import "core:os"
+import "core:strings"
+import "core:path/filepath"
 econio_lib := ""
 asm_bin := ""
 main :: proc() {
@@ -44,7 +46,11 @@ build_pvm :: proc() {
     when ODIN_OS == .Linux do run("chmod", "+x", output)
 }
 build_programs :: proc() {
-    for file in list_files("./testprograms") {
-        run(asm_bin, file.fullpath) 
+    cd("testprograms")
+    for file in list_files() {
+        if filepath.ext(file.fullpath ) == ".pasm" {
+            run(asm_bin, file.fullpath) 
+        }
     }
+    cd("..")
 }
