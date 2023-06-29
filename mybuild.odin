@@ -47,9 +47,10 @@ build_pvm :: proc() {
 }
 build_programs :: proc() {
     cd("testprograms")
+    asmm := concat("../", asm_bin) 
     for file in list_files() {
         if filepath.ext(file.fullpath ) == ".pasm" {
-            run(asm_bin, file.fullpath) 
+            run(asmm, file.fullpath) 
         }
     }
     cd("..")

@@ -626,6 +626,13 @@ fn input(game *Game) void
     jtrue down
     jmp none
     :left
+        pushlocal game
+        getfieldref Game:dir
+        getfield Point:x
+        pushi32 1
+        eq
+        jtrue endswitch
+
         pushi32 -1
         pushlocal game
         getfieldref Game:dir
@@ -638,6 +645,13 @@ fn input(game *Game) void
 
         jmp endswitch
     :right
+        pushlocal game
+        getfieldref Game:dir
+        getfield Point:x
+        pushi32 -1
+        eq
+        jtrue endswitch
+
         pushi32 1
         pushlocal game
         getfieldref Game:dir
@@ -649,6 +663,13 @@ fn input(game *Game) void
         setfield Point:y
         jmp endswitch
     :up
+        pushlocal game
+        getfieldref Game:dir
+        getfield Point:y
+        pushi32 1
+        eq
+        jtrue endswitch
+
         pushi32 0
         pushlocal game
         getfieldref Game:dir
@@ -660,6 +681,13 @@ fn input(game *Game) void
         setfield Point:y
         jmp endswitch
     :down
+
+        pushlocal game
+        getfieldref Game:dir
+        getfield Point:y
+        pushi32 -1
+        eq
+        jtrue endswitch
         pushi32 0
         pushlocal game
         getfieldref Game:dir
