@@ -215,6 +215,12 @@ tokenizer_destroy :: proc(using tokenizer: ^Tokenizer) {
 tokenize :: proc(using tokenizer: ^Tokenizer, code: []rune) -> []Token {
     source = code
     for position < len(source) {
+        if source[position] == ';' {
+            for position < len(source) && source[position] != '\n' {
+                position += 1 
+                col += 1
+            }
+        }
         if unicode.is_letter(source[position]) {
             append(&tokens, tokenize_id(tokenizer))
         }
