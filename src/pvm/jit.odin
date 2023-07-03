@@ -5,6 +5,7 @@ import "core:strings"
 import "core:os"
 import "core:mem"
 import "core:runtime"
+import "core:sort"
 import "x86asm"
 import "core:sys/unix"
 jit :: proc(using vm: ^VM) -> Maybe(JitError) {
@@ -856,6 +857,13 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             jit_compile_lt(asmm, stack, vm)
         case .GT:
             jit_compile_gt(asmm, stack, vm)
+        case .Dup:
+            mov_from(asmm, Reg64.Rax, Reg64.R10, cast(i32)-get_stack_size(stack))
+            v := stack_pop(stack)
+            stack_push(stack, v)
+            mov_to(asmm, Reg64.R10, Reg64.Rax, cast(i32)-get_stack_size(stack))
+            stack_push(stack, v)
+            mov_to(asmm, Reg64.R10, Reg64.Rax, cast(i32)-get_stack_size(stack))
         case .Jmp:
             jmp(asmm, labels[cast(int)instruction.operand])
         case .Jtrue:
@@ -1656,6 +1664,18 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
             append(&blocks, i + 1)
         }
     }
+    changed := true
+    for changed {
+        changed = false
+        for i in 0..=(len(blocks) - 2) {
+            if blocks[i] > blocks[i + 1] {
+                t := blocks[i + 1]
+                blocks[i + 1] = blocks[i]
+                blocks[i] = t
+                changed = true
+            }
+        }
+    }
     codeblocks := make([dynamic]CodeBlock)
     if len(blocks) >= 2
     {
@@ -1764,6 +1784,7 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
         }
         set_label(&a, labels[cb.start])
         fmt.println(cb)
+        fmt.println()
         for instr, index in cb.instructions {
             append(&a.bytes, 0x90)
             jit_compile_instruction(function, vm, instr, local, &a, &cb.stack, labels)
@@ -1949,6 +1970,7 @@ check_if_all_code_paths_return_value :: proc(using function: ^Function, vm: ^VM,
     }
     
 }
+count := 0
 calculate_stack :: proc(using function: ^Function, vm: ^VM, cb: ^CodeBlock, codeblocks: [dynamic]CodeBlock) -> Maybe(JitError) {
     resultStack := TypeStack {}
     if cb.stack.types != nil { 
@@ -2379,6 +2401,7 @@ calculate_stack :: proc(using function: ^Function, vm: ^VM, cb: ^CodeBlock, code
             t := stack_pop(&resultStack)
             stack_push(&resultStack, t)
             stack_push(&resultStack, t)
+            
         case .Box:
             if resultStack.count == 0 {
                 return not_enough_items_on_stack(function.module.name, function.name, instr, cb.start + index)

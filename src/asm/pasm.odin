@@ -207,6 +207,7 @@ instructions := map[string]pvm.OpCode {
     "cast" = pvm.OpCode.Cast,
     "conv" = pvm.OpCode.Conv,
     "pushchar" = pvm.OpCode.PushChar,
+    "dup" = pvm.OpCode.Dup,
 }
 
 tokenizer_destroy :: proc(using tokenizer: ^Tokenizer) {
