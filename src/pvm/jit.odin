@@ -188,7 +188,7 @@ jit_prepare_locals_systemv_abi :: proc(using function: ^Function, asmm: ^x86asm.
 jit_prepare_locals_win_abi :: proc(using function: ^Function, asmm: ^x86asm.Assembler) -> ([]int, i64) {
     using x86asm  
     res := make([]int, len(args) + len(locals))
-    offset := 0
+    offset := -16
     for arg, index in args {
         typesize := get_type_size(arg)
         if typesize < 8 {
@@ -2445,7 +2445,7 @@ calculate_stack :: proc(using function: ^Function, vm: ^VM, cb: ^CodeBlock, code
             if !type_is_number(t) && t.(PrimitiveType) != PrimitiveType.Boolean && t.(PrimitiveType) != PrimitiveType.Char {
                 return type_mismatch(function.module.name, function.name, instr, cb.start + index)
             }
-            if !type_is_number(casttype) && casttype.(PrimitiveType) != PrimitiveType.Boolean && t.(PrimitiveType) != PrimitiveType.Char {
+            if !type_is_number(casttype) && casttype.(PrimitiveType) != PrimitiveType.Boolean && casttype.(PrimitiveType) != PrimitiveType.Char {
                 return type_mismatch(function.module.name, function.name, instr, cb.start + index)
             }
             stack_push(&resultStack, casttype)
