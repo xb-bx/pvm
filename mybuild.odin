@@ -34,7 +34,7 @@ build_all :: proc() {
             run("gcc", "-c", "econio.c")
             run("ar", "rcs", "econio.a", "econio.o")
         }
-        cp(econio_lib, "../")
+        cp(econio_lib, "../src")
         cd("..")
     }
     build_pvm()
