@@ -1676,6 +1676,16 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
             }
         }
     }
+    hs := make(map[int]int, len(blocks))
+    defer delete(hs)
+    for i in 0..<len(blocks) {
+        if _, ok :=  hs[blocks[i]]; ok {
+            ordered_remove(&blocks, i)
+        }
+        else {
+            hs[blocks[i]] = 1
+        }
+    }
     codeblocks := make([dynamic]CodeBlock)
     if len(blocks) >= 2
     {
