@@ -6,26 +6,50 @@ import "core:path/filepath"
 econio_lib := ""
 asm_bin := ""
 main :: proc() {
-    if !os.exists("c-econio") {
-        run("git", "clone", "https://github.com/czirkoszoltan/c-econio")
-    }
-    cd("c-econio")
     when ODIN_OS == .Windows {
-        run("cl", "-TC", "-c", "econio.c")
-        run("lib", "-nologo", "econio.obj", "-out:econio.lib")
         econio_lib = "econio.lib"
         asm_bin = "asm.exe"
     } else {
-        run("gcc", "-c", "econio.c")
-        run("ar", "rcs", "econio.a", "econio.o")
         econio_lib = "econio.a"
         asm_bin = "asm.bin"
     }
-    cp(econio_lib, "../src")
-    cd("..")
+    if len(os.args) == 1 {
+        build_all()
+        return
+    }
+    else if os.args[1] == "programs" {
+        build_programs() 
+    }
+}
+build_all :: proc() {
+    if !os.exists("c-econio") {
+        run("git", "clone", "https://github.com/czirkoszoltan/c-econio")
+    }
+    if !os.exists(concat("src/", econio_lib)) {
+        cd("c-econio")
+        when ODIN_OS == .Windows {
+            run("cl", "-TC", "-c", "econio.c")
+            run("lib", "-nologo", "econio.obj", "-out:econio.lib")
+        } else {
+            run("gcc", "-c", "econio.c")
+            run("ar", "rcs", "econio.a", "econio.o")
+        }
+        cp(econio_lib, "../")
+        cd("..")
+    }
     build_pvm()
     build_pasm() 
+    build_disasm()
     build_programs()
+}
+build_disasm :: proc() {
+    cd("./src")
+    when ODIN_OS == .Windows do output :: "disasm.exe"
+    else do output :: "disasm.bin"
+    run("odin", "build", "disasm", concat("-extra-linker-flags:", econio_lib), "-out:" + output)
+    cp(output, "..")
+    cd("..")
+    when ODIN_OS == .Linux do run("chmod", "+x", output)
 }
 build_pasm :: proc() {
     cd("./src")
