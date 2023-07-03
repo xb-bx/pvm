@@ -305,7 +305,6 @@ gc_find_freeplace :: proc(using gc: ^GC, size: int) -> Maybe(FreePlace) {
     return nil
 }
 gc_new_chunk :: proc(using gc: ^GC, size: int = DEFAULT_CHUNK_SIZE) {
-    fmt.println("CHUNKIE WAKIE")
     data, err := mem.alloc(size, GC_ALLIGNMENT)
     if err != mem.Allocator_Error.None {
         panic("Failed to allocate memory")

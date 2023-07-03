@@ -5,7 +5,7 @@ import "core:strings"
 import "../pvm"
 
 main :: proc() {
-    if len(os.args) <= 2 {
+    if len(os.args) == 1 {
         return
     }
     using pvm    
@@ -15,6 +15,14 @@ main :: proc() {
         fmt.println(err)
         return
     }
+    
+    if len(os.args) == 2 {
+        for fn in module.functions {
+            fmt.println(fn.name)
+        }
+        return
+    }
+
     fnname := os.args[2]
     fn: ^Function = nil
     for tfn in module.functions {
