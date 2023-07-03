@@ -106,6 +106,7 @@ VM :: struct {
     arrays: map[^Type]^Type,
     boxes: map[^Type]^Type,
     refs: map[^Type]^Type,
+    mainFolder: string,
     gc: GC,
 }
 Chunk :: struct {
@@ -376,17 +377,22 @@ initvm :: proc() -> VM {
         boxes = make(map[^Type]^Type),
         primitiveTypes = pmtypes,
         gc = gc,
+        mainFolder = "",
     }
 }
 load_module :: proc(using vm: ^VM, name: string) -> (mod: ^Module, err: VMError) {
     if mod, ok := modules[name]; ok {
         return mod, none
     }
-    if filepath.ext(name) == ".mod" {
-        return load_module_from_file(vm, name)
+    if mainFolder == "" {
+        mainFolder = filepath.dir(name)
+    }
+    filename := filepath.base(name)
+    if filepath.ext(filename) == ".mod" {
+        return load_module_from_file(vm, filename)
     }    
     else {
-        slice := []string {name, ".mod"}
+        slice := []string {filename, ".mod"}
         modfile := strings.concatenate(slice)
         defer delete(modfile)
         return load_module_from_file(vm, modfile)
@@ -394,7 +400,7 @@ load_module :: proc(using vm: ^VM, name: string) -> (mod: ^Module, err: VMError)
 }
 
 load_module_from_file :: proc(using vm: ^VM, file: string) -> (mod: ^Module, err: VMError) {
-    bytes, ok := os.read_entire_file(file)
+    bytes, ok := os.read_entire_file(filepath.join([]string{mainFolder, file}))
     defer {
         delete(bytes)
     }

@@ -15,6 +15,7 @@ import "core:math/rand"
 import "core:strings"
 import "core:unicode/utf16"
 import "core:c"
+import "core:path/filepath"
 
 when ODIN_OS == .Windows do foreign import econio "econio.lib"
 when ODIN_OS == .Linux do foreign import econio "econio.a"
@@ -125,37 +126,15 @@ main :: proc() {
     mem.tracking_allocator_init(&tracking, context.allocator);
     context.allocator = mem.tracking_allocator(&tracking);
     ctx = context
-//     context.logger = log.create_console_logger();
-//     allocator := log.Log_Allocator{}
-//     log.log_allocator_init(&allocator, log.Level.Warning);
-//     context.allocator = log.log_allocator(&allocator); 
     set_formatter()
-//     asmm := initasm()
-//     for i in 0..=15 {
-//         for j in 0..=15 {
-//             movsx_reg64_reg16(&asmm, cast(Reg64)i, cast(Reg16)j)
-//         }
-//     }
-//     print_bytes(asmm.bytes)
-//     if true {
-//         return
-//     }
     before := len(tracking.allocation_map)
     vm := initvm()
     vmm = &vm
-//     mod, err := load_module(&vm, "F:/pvm/test")
     mod, err := load_module(&vm, os.args[1])
     if _, ok := err.(None); !ok {
         fmt.println(err)
+        os.exit(1)
     }
-//     fmt.println("SIZE = ")
-//     fmt.println(get_type_size(mod.types["Point"]))
-//     type := mod.types["TestType"].(CustomType);
-//     fmt.println(type.size)
-//     for fld in type.fields {
-//         fmt.println(fld.name, fld.offset)
-//     }
-//     fmt.println(type.size)
     jiterr := jit(&vm)
     if jiterr != nil {
         fmt.println("Err = ", jiterr)
@@ -346,7 +325,8 @@ main :: proc() {
 }
 random :: proc "c" (min: i64, max: i64) -> i64 {
     context = ctx
-    return min + (rand.int63() % (max - min))
+    res := min + (rand.int63() % (max - min))
+    return res
 }
 getkeystate :: proc "c" (key: i64) -> i64 {
     context = ctx
