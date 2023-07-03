@@ -1,8 +1,6 @@
 module minesweeper
 
 import builtins
-import fn printi32 from builtins
-import fn printi64 from builtins
 import fn println from builtins
 import fn printchar from builtins
 import fn flush from builtins
@@ -34,11 +32,6 @@ fn fillBoard (game *Game) void
     end
     pushi32 0
     setlocal bombs
-    pushlocal game
-    getfield Game:numberOfBombs
-    call printi32
-    pushstr "BOMBS"
-    call println
     :bloop
         pushlocal game ; x = rand(0, w)
         getfield Game:w
@@ -61,10 +54,6 @@ fn fillBoard (game *Game) void
         jtrue bloop
 
 
-        pushlocal x
-        call printi64
-        pushlocal y
-        call printi64
 
         pushtrue ; game.board[y][x].isBomb = true
         pushlocal game
@@ -126,7 +115,6 @@ fn fillBoard (game *Game) void
         pushlocal bombs
         lt
         jtrue bloop
-
     ret
 end
 fn isBomb (game *Game x i64 y i64) bool 
@@ -363,7 +351,7 @@ fn printBoard (game *Game) void
                 reflocal cell
                 getfield Cell:isTested
                 jtrue tested
-                    pushchar ' '
+                    pushchar '.'
                     setlocal out
                     jmp endswitch
                 :tested
@@ -573,11 +561,9 @@ fn test(game *Game x i64 y i64) void
     locals 
         ix i64
         iy i64
+        tx i64
+        ty i64
     end
-    ;pushlocal x
-    ;call printi64
-    ;pushlocal y
-    ;call printi64
     pushi64 0
     pushlocal x
     lt
@@ -646,14 +632,40 @@ fn test(game *Game x i64 y i64) void
             pushlocal iy
             pushlocal y
             add
+            setlocal ty
 
             pushlocal ix
             pushlocal x
             add
+            setlocal tx
+            
+            pushi32 0
+            pushlocal ty
+            pushlocal tx
+            pushlocal game
+            call getBombsAt
+            gt
+            jtrue incr 
+
+
+
+            pushlocal ty
+            pushlocal tx
             pushlocal game
             call test
             
             :incr
+            pushlocal ty
+            pushlocal tx
+            pushlocal game
+            call isBomb
+            jtrue skipSettingTested
+            pushlocal ty
+            pushlocal tx
+            pushlocal game
+            call setTested
+            :skipSettingTested
+
             pushlocal ix
             pushi64 1
             add
@@ -673,12 +685,160 @@ fn test(game *Game x i64 y i64) void
         pushlocal iy
         lt
         jtrue yloop
-
-
+    ;pushi32 0
+    ;pop
     :outofbounds
     ret
 
     
+end
+fn setTested(game *Game x i64 y i64) void
+    pushi64 0
+    pushlocal x
+    lt
+    jtrue notabomb
+
+    pushi64 0
+    pushlocal y
+    lt
+    jtrue notabomb
+
+    pushlocal game
+    getfield Game:w
+    conv i64
+    pushlocal x
+    pushi64 1
+    add
+    gt
+    jtrue notabomb
+
+    pushlocal game
+    getfield Game:h
+    conv i64
+    pushlocal y
+    pushi64 1
+    add
+    gt
+    jtrue notabomb
+
+    pushtrue
+    pushlocal game
+    getfield Game:board
+    pushlocal y
+    getindex
+    pushlocal x
+    getindexref
+    setfield Cell:isTested
+    ret
+
+    :notabomb
+        ret
+end
+fn getBombsAt(game *Game x i64 y i64) i32
+    pushi64 0
+    pushlocal x
+    lt
+    jtrue notabomb
+
+    pushi64 0
+    pushlocal y
+    lt
+    jtrue notabomb
+
+    pushlocal game
+    getfield Game:w
+    conv i64
+    pushlocal x
+    pushi64 1
+    add
+    gt
+    jtrue notabomb
+
+    pushlocal game
+    getfield Game:h
+    conv i64
+    pushlocal y
+    pushi64 1
+    add
+    gt
+    jtrue notabomb
+
+    pushlocal game
+    getfield Game:board
+    pushlocal y
+    getindex
+    pushlocal x
+    getindexref
+    getfield Cell:bombsAround
+    ret
+
+    :notabomb
+        pushi32 0
+        ret
+end
+fn checkWin (game *Game) void 
+    locals
+        x i64
+        y i64
+        untested i32
+    end
+    :yloop
+        pushi64 0
+        setlocal x
+        :xloop
+            pushlocal game
+            getfield Game:board
+            pushlocal y
+            getindex
+            pushlocal x
+            getindexref
+            getfield Cell:isTested
+            jtrue incr
+            pushlocal untested
+            pushi32 1
+            add
+            setlocal untested
+            :incr
+                pushi64 1
+                pushlocal x
+                add
+                setlocal x
+        :xcond
+            pushlocal game
+            getfield Game:w
+            pushlocal x
+            conv i32
+            lt
+            jtrue xloop
+        pushi64 1
+        pushlocal y
+        add
+        setlocal y
+    :ycond
+        pushlocal game
+        getfield Game:h
+        pushlocal y
+        conv i32
+        lt
+        jtrue yloop
+
+    pushlocal game
+    getfield Game:numberOfBombs
+    pushlocal untested
+    eq
+    not
+    jtrue endoffn
+    
+    pushstr "YOU WIN"
+    call println
+    
+    pushtrue
+    pushlocal game
+    setfield Game:gameOver
+
+
+    :endoffn
+    ret
 end
 fn update (game *Game key char) void 
     pushlocal key
@@ -701,7 +861,8 @@ fn update (game *Game key char) void
     pushtrue
     pushlocal game
     setfield Game:gameOver
-    
+    pushstr "BOOM BOOM BOOM"
+    call println
     :test 
     pushlocal game
     getfield Game:selectedY
@@ -711,6 +872,8 @@ fn update (game *Game key char) void
     conv i64
     pushlocal game
     call test
+    pushlocal game
+    call checkWin
 
     :endl
     pushlocal key
@@ -723,9 +886,9 @@ fn main () void
         g *Game
         key char
     end
-    pushi32 50
-    pushi32 15
-    pushi32 20
+    pushi32 9
+    pushi32 10
+    pushi32 10
     call newGame 
     box
     setlocal g
