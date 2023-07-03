@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:mem"
 import "core:mem/virtual"
 import "core:runtime"
+import "core:path/filepath"
 // import "core:sys/windows"
 Tuple :: struct($T1, $T2: typeid) {
     first: T1,
@@ -381,10 +382,15 @@ load_module :: proc(using vm: ^VM, name: string) -> (mod: ^Module, err: VMError)
     if mod, ok := modules[name]; ok {
         return mod, none
     }
-    slice := []string {name, ".mod"}
-    modfile := strings.concatenate(slice)
-    defer delete(modfile)
-    return load_module_from_file(vm, modfile)
+    if filepath.ext(name) == ".mod" {
+        return load_module_from_file(vm, name)
+    }    
+    else {
+        slice := []string {name, ".mod"}
+        modfile := strings.concatenate(slice)
+        defer delete(modfile)
+        return load_module_from_file(vm, modfile)
+    }
 }
 
 load_module_from_file :: proc(using vm: ^VM, file: string) -> (mod: ^Module, err: VMError) {
