@@ -1090,38 +1090,40 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             jit_compile_conv(asmm, stack, function.module.typedescriptors[instruction.operand])
         case .NewObj:
             type := function.module.typedescriptors[instruction.operand]
-            if type_is(CustomType, type) {
-                panic("Not implemented")
-            }
-            push(asmm, Reg64.R10)
-            push(asmm, Reg64.R10)
-            when os.OS == runtime.Odin_OS_Type.Windows {
-                mov(asmm, Reg64.Rdx, transmute(u64)type)
-                mov(asmm, Reg64.Rcx, transmute(u64)vm)
-                mov_from(asmm, Reg64.R8, Reg64.R10, -get_stack_size(stack))
-            }
-            else when os.OS == runtime.Odin_OS_Type.Linux {
-                mov(asmm, Reg64.Rsi, transmute(u64)type)
-                mov(asmm, Reg64.Rdi, transmute(u64)vm)
-                mov_from(asmm, Reg64.Rdx, Reg64.R10, -get_stack_size(stack))
+            if type_is(CustomType, type) || type_is(PrimitiveType, type) {
+                stack_push(stack, type)
             }
             else {
-                panic("")
+                push(asmm, Reg64.R10)
+                push(asmm, Reg64.R10)
+                when os.OS == runtime.Odin_OS_Type.Windows {
+                    mov(asmm, Reg64.Rdx, transmute(u64)type)
+                    mov(asmm, Reg64.Rcx, transmute(u64)vm)
+                    mov_from(asmm, Reg64.R8, Reg64.R10, -get_stack_size(stack))
+                }
+                else when os.OS == runtime.Odin_OS_Type.Linux {
+                    mov(asmm, Reg64.Rsi, transmute(u64)type)
+                    mov(asmm, Reg64.Rdi, transmute(u64)vm)
+                    mov_from(asmm, Reg64.Rdx, Reg64.R10, -get_stack_size(stack))
+                }
+                else {
+                    panic("")
+                }
+                lentype := stack_pop(stack)
+                if lentype.(PrimitiveType) != PrimitiveType.I64 {
+                    panic("Not implemented")
+                }
+                mov(asmm, Reg32.Eax, 32)
+                sub(asmm, Reg64.Rsp, Reg64.Rax)
+                mov(asmm, Reg64.R11, transmute(u64)new_array)
+                call_reg(asmm, Reg64.R11)
+                mov(asmm, Reg32.Ecx, 32)
+                add(asmm, Reg64.Rsp, Reg64.Rcx)
+                pop(asmm, Reg64.R10)
+                pop(asmm, Reg64.R10)
+                stack_push(stack, make_array(vm, type))
+                mov_to(asmm, Reg64.R10, Reg64.Rax, -get_stack_size(stack))
             }
-            lentype := stack_pop(stack)
-            if lentype.(PrimitiveType) != PrimitiveType.I64 {
-                panic("Not implemented")
-            }
-            mov(asmm, Reg32.Eax, 32)
-            sub(asmm, Reg64.Rsp, Reg64.Rax)
-            mov(asmm, Reg64.R11, transmute(u64)new_array)
-            call_reg(asmm, Reg64.R11)
-            mov(asmm, Reg32.Ecx, 32)
-            add(asmm, Reg64.Rsp, Reg64.Rcx)
-            pop(asmm, Reg64.R10)
-            pop(asmm, Reg64.R10)
-            stack_push(stack, make_array(vm, type))
-            mov_to(asmm, Reg64.R10, Reg64.Rax, -get_stack_size(stack))
         case .GetIndexRef:
             firstArg := Reg64.Rcx
             secondArg := Reg64.Rdx
