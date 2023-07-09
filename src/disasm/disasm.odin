@@ -9,8 +9,10 @@ main :: proc() {
         return
     }
     using pvm    
+    pvm.set_formatter();
     vm := initvm()
     module, err := load_module(&vm, os.args[1])
+    jit(&vm)
     if _, ok := err.(None); !ok {
         fmt.println(err)
         return
@@ -84,6 +86,11 @@ main :: proc() {
                 
         }
         fmt.print("\n")
+        
+    }
+    fmt.print("jitted code:")
+    for i in 0..<fn.jitted_body.size {
+        fmt.printf("%H", fn.jitted_body.base[i])
     }
 
 
