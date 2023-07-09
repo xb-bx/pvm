@@ -1680,12 +1680,14 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
     }
     hs := make(map[int]int, len(blocks))
     defer delete(hs)
-    for i in 0..<len(blocks) {
+    i := 0
+    for i < len(blocks) {
         if _, ok :=  hs[blocks[i]]; ok {
             ordered_remove(&blocks, i)
         }
         else {
             hs[blocks[i]] = 1
+            i += 1
         }
     }
     codeblocks := make([dynamic]CodeBlock)
@@ -2199,6 +2201,7 @@ calculate_stack :: proc(using function: ^Function, vm: ^VM, cb: ^CodeBlock, code
                 }
             }
             if !stack_equals(resultStack, block.stack) {
+                fmt.println(resultStack, block.stack)
                 return invalid_stack_on_jump(function.module.name, function.name, instr, cb.start + index)
             }
             canEscape = false
@@ -2229,6 +2232,7 @@ calculate_stack :: proc(using function: ^Function, vm: ^VM, cb: ^CodeBlock, code
                 }
             }
             if !stack_equals(resultStack, block.stack) {
+                fmt.println(resultStack, block.stack)
                 return invalid_stack_on_jump(function.module.name, function.name, instr, cb.start + index)
             }
         case .Ret:
