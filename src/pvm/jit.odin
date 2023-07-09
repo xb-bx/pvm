@@ -925,22 +925,34 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             stack_push(stack, reft)
             mov_to(asmm, Reg64.R10, Reg64.Rcx, -get_stack_size(stack))
         case .GetField:
-            mov_from(asmm, Reg64.Rcx, Reg64.R10, -get_stack_size(stack))
-            jit_null_check(asmm, Reg64.Rcx)
             reftype := stack_pop(stack)
-            field: ^Field = nil
-            fmt.print(stack.types)
-            if type_is(RefType, reftype) {
-                field = reftype.(RefType).underlaying.(CustomType).fields[instruction.operand]
-                mov(asmm, Reg64.Rdx, transmute(u64)field.offset)
+            stack_push(stack, reftype)
+            if type_is(CustomType, reftype) {
+                type := reftype.(CustomType)
+                field := type.fields[instruction.operand]
+                mov(asmm, Reg64.R11, Reg64.R10)
+                stack_size := get_stack_size(stack)
+                reftype = stack_pop(stack)
+                stack_push(stack, field.type)
+                jit_memcpy(asmm, get_type_size(field.type), Reg64.R11, Reg64.R10, -stack_size + cast(i32)field.offset, -get_stack_size(stack))
             }
             else {
-                field = reftype.(BoxedType).underlaying.(CustomType).fields[instruction.operand]
-                mov(asmm, Reg64.Rdx, transmute(u64)field.offset + size_of(ObjectHeader))
+                mov_from(asmm, Reg64.Rcx, Reg64.R10, -get_stack_size(stack))
+                reftype := stack_pop(stack)
+                jit_null_check(asmm, Reg64.Rcx)
+                field: ^Field = nil
+                if type_is(RefType, reftype) {
+                    field = reftype.(RefType).underlaying.(CustomType).fields[instruction.operand]
+                    mov(asmm, Reg64.Rdx, transmute(u64)field.offset)
+                }
+                else {
+                    field = reftype.(BoxedType).underlaying.(CustomType).fields[instruction.operand]
+                    mov(asmm, Reg64.Rdx, transmute(u64)field.offset + size_of(ObjectHeader))
+                }
+                add(asmm, Reg64.Rcx, Reg64.Rdx)
+                stack_push(stack, field.type)
+                jit_memcpy(asmm, get_type_size(field.type), Reg64.Rcx, Reg64.R10, 0, -get_stack_size(stack))
             }
-            add(asmm, Reg64.Rcx, Reg64.Rdx)
-            stack_push(stack, field.type)
-            jit_memcpy(asmm, get_type_size(field.type), Reg64.Rcx, Reg64.R10, 0, -get_stack_size(stack))
         case .ToRawPtr:
             stack_pop(stack)
             stack_push(stack, vm.primitiveTypes[PrimitiveType.I64])
@@ -1465,7 +1477,6 @@ jit_compile_call_systemv_abi :: proc(using function: ^Function, vm: ^VM, instruc
    
 
     if big_return {
-        fmt.println("BIG RETURN")
         mov(asmm, Reg64.R11, cast(u64)get_type_size(fn.retType))
         sub(asmm, Reg64.Rsp, Reg64.R11)
         mov(asmm, Reg64.Rdi, Reg64.Rsp)
@@ -1478,7 +1489,6 @@ jit_compile_call_systemv_abi :: proc(using function: ^Function, vm: ^VM, instruc
         sub(asmm, Reg64.Rsp, Reg64.R11)
     }
     st := stack_size
-    fmt.println("STACK ARGS", fn.name, len(stack_args), stack_args)
     for i >= 0 && len(stack_args) >= 1 {
         stack_arg := stack_args[i];
         st += get_type_size(stack_arg.first, true)
@@ -1738,8 +1748,6 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
         }
     }
     local, localssize := jit_prepare_locals(function, &a)
-    fmt.println("LOCALS = ")
-    fmt.println(local)
         
     stacksize: i64 = -128
     mov(&a, Reg64.R10, Reg64.Rsp) 
@@ -1797,8 +1805,6 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
             continue
         }
         set_label(&a, labels[cb.start])
-        fmt.println(cb)
-        fmt.println()
         for instr, index in cb.instructions {
             append(&a.bytes, 0x90)
             jit_compile_instruction(function, vm, instr, local, &a, &cb.stack, labels)
@@ -1807,8 +1813,6 @@ jit_function :: proc(using function: ^Function, vm: ^VM) -> Maybe(JitError) {
         }
     }
     assemble(&a)
-    fmt.println(function.name)
-    print_bytes(a.bytes)
     function.jitted_body = alloc_executable(len(a.bytes))
     for b, index in a.bytes {
         function.jitted_body.base[index] = b
@@ -2169,10 +2173,6 @@ calculate_stack :: proc(using function: ^Function, vm: ^VM, cb: ^CodeBlock, code
             if len(fn.args) > resultStack.count {
                 return not_enough_items_on_stack(function.module.name, function.name, instr, cb.start + index)
             }
-            fmt.println(resultStack)
-            fmt.println(fn.args)
-            fmt.println(fn.name)
-
             for arg in fn.args {
                 if !type_equals(arg, stack_pop(&resultStack)) {
                     return type_mismatch(function.module.name, function.name, instr, cb.start + index)
@@ -2201,7 +2201,6 @@ calculate_stack :: proc(using function: ^Function, vm: ^VM, cb: ^CodeBlock, code
                 }
             }
             if !stack_equals(resultStack, block.stack) {
-                fmt.println(resultStack, block.stack)
                 return invalid_stack_on_jump(function.module.name, function.name, instr, cb.start + index)
             }
             canEscape = false
@@ -2232,7 +2231,6 @@ calculate_stack :: proc(using function: ^Function, vm: ^VM, cb: ^CodeBlock, code
                 }
             }
             if !stack_equals(resultStack, block.stack) {
-                fmt.println(resultStack, block.stack)
                 return invalid_stack_on_jump(function.module.name, function.name, instr, cb.start + index)
             }
         case .Ret:
@@ -2352,6 +2350,9 @@ calculate_stack :: proc(using function: ^Function, vm: ^VM, cb: ^CodeBlock, code
             }
             else if type_is(RefType, object) && type_is(CustomType, object.(RefType).underlaying) {
                 type = &object.(RefType).underlaying.(CustomType)
+            }
+            else if type_is(CustomType, object) {
+                type = &object.(CustomType)
             }
             else {
                 return type_mismatch(function.module.name, function.name, instr, cb.start + index)
