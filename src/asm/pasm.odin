@@ -411,7 +411,7 @@ continue_tokenize_field :: proc(using tokenizer: ^Tokenizer) -> Token {
 }
 tokenize_id :: proc(using tokenizer: ^Tokenizer) -> Token {
     column := col
-    for position < len(source) && (unicode.is_letter(source[position]) || unicode.is_digit(source[position])) {
+    for position < len(source) && (unicode.is_letter(source[position]) || unicode.is_digit(source[position]) || source[position] == '_') {
         strings.write_rune(&builder, source[position])
         position += 1
         col += 1
@@ -1085,7 +1085,12 @@ compile_body :: proc(using program: ^Program, function: ^Function, bytes: ^[dyna
             instrcount += 1
         }
         else {
-            labels[instruction.opcode.value] = instrcount
+            if _, labelFound := labels[instruction.opcode.value]; labelFound {
+                parse_error("Label redefinition", instruction.opcode)
+            }
+            else {
+                labels[instruction.opcode.value] = instrcount
+            }
         }
     }
     for tuple in labelplaces {
