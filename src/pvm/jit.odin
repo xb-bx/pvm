@@ -574,6 +574,18 @@ out_of_bounds :: proc "c" (i: i64) {
     }
     panic(fmt.aprint("INDEX", i, "OUT OF BOUNDS\n"))
 }
+jit_nullify :: proc(asmm: ^x86asm.Assembler, size: int, ptr: x86asm.Reg64, offset: i32) {
+    using x86asm
+    assert(size % 8 == 0)
+    size := size
+    off :i32= 0
+    mov(asmm, Reg64.Rax, 0)
+    for size > 0 {
+        mov_to(asmm, ptr, Reg64.Rax, offset + off) 
+        size -= 8
+        off += 8
+    }
+}
 jit_memcpy :: proc(asmm: ^x86asm.Assembler, memsize: int, from: x86asm.Reg64, to: x86asm.Reg64, from_offset: i32, to_offset: i32) {
     using x86asm  
     size := memsize
@@ -1230,6 +1242,7 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             type := function.module.typedescriptors[instruction.operand]
             if type_is(CustomType, type) || type_is(PrimitiveType, type) {
                 stack_push(stack, type)
+                jit_nullify(asmm, get_type_size(type, true), Reg64.R10, -get_stack_size(stack))
             }
             else {
                 push(asmm, Reg64.R10)
