@@ -182,24 +182,7 @@ push_imm :: proc (using assembler: ^Assembler, imm: u32)
 }
 push :: proc{push_reg64, push_imm}
 
-imul_reg64_reg64 :: proc(using assembler: ^Assembler, dest: Reg64, src: Reg64) {
-    prefix: u8 = 0b01001000
-    modrm: u8 = 0b11000000
-    if cast(u8)dest > 7 {
-        prefix |= 0b100
-    }
-    if cast(u8)src > 7 {
-        prefix |= 1
-    }
-    modrm |= (cast(u8)dest % 8) << 3
-    modrm |= (cast(u8)src % 8)
-    append(&bytes, prefix)
-    append(&bytes, 0x0f)
-    append(&bytes, 0xaf)
-    append(&bytes, modrm)
-}
 
-imul :: proc {imul_reg64_reg64}
 
 ret :: proc(using assembler: ^Assembler) {
     append(&bytes, 0xc3)

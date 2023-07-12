@@ -367,6 +367,44 @@ jit_compile_conv :: proc(asmm: ^x86asm.Assembler, stack: ^TypeStack, convtype: ^
     }
         
 }
+jit_compile_mul :: proc(asmm: ^x86asm.Assembler, stack: ^TypeStack) {
+    using x86asm
+    t := stack_pop(stack)
+    if type_is_float(t) {
+        panic("NOT IMPLEMENTED")
+    }
+    mov_from(asmm, Reg64.Rax, Reg64.R10, -get_stack_size(stack) - 8)
+    mov_from(asmm, Reg64.Rcx, Reg64.R10, -get_stack_size(stack))
+    #partial switch t.(PrimitiveType) {
+        case .I8:
+            imul(asmm, Reg8.Cl)
+        case .U8:
+            mul(asmm, Reg8.Cl)
+        case .I16:
+            imul(asmm, Reg16.Cx)
+        case .U16:
+            mul(asmm, Reg16.Cx)
+        case .I32:
+            imul(asmm, Reg32.Ecx)
+        case .U32:
+            mul(asmm, Reg32.Ecx)
+        case .I64:
+            imul(asmm, Reg64.Rcx)
+        case .U64:
+            mul(asmm, Reg64.Rcx)
+    }
+    #partial switch t.(PrimitiveType) {
+        case .I8, .U8:
+            mov_to(asmm, Reg64.R10, Reg8.Al, -get_stack_size(stack))
+        case .I16, .U16:
+            mov_to(asmm, Reg64.R10, Reg16.Ax, -get_stack_size(stack))
+        case .I32, .U32:
+            mov_to(asmm, Reg64.R10, Reg32.Eax, -get_stack_size(stack))
+        case .I64, .U64:
+            mov_to(asmm, Reg64.R10, Reg64.Rax, -get_stack_size(stack))
+    }
+    
+}
 jit_compile_neg :: proc(asmm: ^x86asm.Assembler, stack: ^TypeStack) {
     using x86asm
     size := get_stack_size(stack)
@@ -872,6 +910,8 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             jit_compile_sub(asmm, stack)
         case .Neg:
             jit_compile_neg(asmm, stack)
+        case .Mul:
+            jit_compile_mul(asmm, stack)
         case .PushLocal:
             type := get_local(function, instruction.operand)
             jit_compile_pushlocal(asmm, stack, cast(i32)local[instruction.operand], type)
