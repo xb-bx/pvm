@@ -367,6 +367,53 @@ jit_compile_conv :: proc(asmm: ^x86asm.Assembler, stack: ^TypeStack, convtype: ^
     }
         
 }
+jit_compile_div :: proc(asmm: ^x86asm.Assembler, stack: ^TypeStack) {
+    using x86asm
+    t := stack_pop(stack)
+    if type_is_float(t) {
+        panic("NOT IMPLEMENTED")
+    }
+    mov(asmm, Reg64.Rdx, 0)
+    mov_from(asmm, Reg64.Rax, Reg64.R10, -get_stack_size(stack) - 8)
+    mov_from(asmm, Reg64.Rcx, Reg64.R10, -get_stack_size(stack))
+    notzero := create_label(asmm)
+    cmp(asmm, Reg64.Rcx, Reg64.Rdx)
+    
+    mov(asmm, Reg64.Rax, transmute(u64)division_by_zero) 
+    call_reg(asmm, Reg64.Rax)
+
+    jne(asmm, notzero)
+    set_label(asmm, notzero)
+    #partial switch t.(PrimitiveType) {
+        case .I8:
+            idiv(asmm, Reg8.Cl)
+        case .U8:
+            div(asmm, Reg8.Cl)
+        case .I16:
+            idiv(asmm, Reg16.Cx)
+        case .U16:
+            div(asmm, Reg16.Cx)
+        case .I32:
+            idiv(asmm, Reg32.Ecx)
+        case .U32:
+            div(asmm, Reg32.Ecx)
+        case .I64:
+            idiv(asmm, Reg64.Rcx)
+        case .U64:
+            div(asmm, Reg64.Rcx)
+    }
+    #partial switch t.(PrimitiveType) {
+        case .I8, .U8:
+            mov_to(asmm, Reg64.R10, Reg8.Al, -get_stack_size(stack))
+        case .I16, .U16:
+            mov_to(asmm, Reg64.R10, Reg16.Ax, -get_stack_size(stack))
+        case .I32, .U32:
+            mov_to(asmm, Reg64.R10, Reg32.Eax, -get_stack_size(stack))
+        case .I64, .U64:
+            mov_to(asmm, Reg64.R10, Reg64.Rax, -get_stack_size(stack))
+    }
+    
+}
 jit_compile_mul :: proc(asmm: ^x86asm.Assembler, stack: ^TypeStack) {
     using x86asm
     t := stack_pop(stack)
@@ -508,6 +555,15 @@ jit_null_check :: proc(asmm: ^x86asm.Assembler, ptr: x86asm.Reg64, t1: x86asm.Re
     mov(asmm, Reg64.Rax, transmute(u64)nullref) 
     call_reg(asmm, Reg64.Rax)
     set_label(asmm, notnull)
+}
+division_by_zero :: proc "c" () {
+    context = ctx
+    for len(stacktrace) > 0 {
+        frame :StackFrame= {}
+        stack_trace_pop(&frame)
+        fmt.printf("at %v.%v\n", frame.fn.module.name, frame.fn.name)
+    }
+    panic(fmt.aprint("DIVISION BY ZERO\n"))
 }
 out_of_bounds :: proc "c" (i: i64) {
     context = ctx
@@ -912,6 +968,8 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             jit_compile_neg(asmm, stack)
         case .Mul:
             jit_compile_mul(asmm, stack)
+        case .Div:
+            jit_compile_div(asmm, stack)
         case .PushLocal:
             type := get_local(function, instruction.operand)
             jit_compile_pushlocal(asmm, stack, cast(i32)local[instruction.operand], type)
