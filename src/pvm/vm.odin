@@ -305,8 +305,8 @@ gc_find_freeplace :: proc(using gc: ^GC, size: int) -> Maybe(FreePlace) {
     return nil
 }
 gc_new_chunk :: proc(using gc: ^GC, size: int = DEFAULT_CHUNK_SIZE) {
-    data, err := mem.alloc(size, GC_ALLIGNMENT)
-    if err != mem.Allocator_Error.None {
+    data := mem.alloc(size, GC_ALLIGNMENT)
+    if data == nil {
         panic("Failed to allocate memory")
     }    
     chunk := new(Chunk)
@@ -691,8 +691,8 @@ load_module_from_file :: proc(using vm: ^VM, file: string) -> (mod: ^Module, err
             append(&strdata, ch)
             ch, ok = read_u16(&reader)
         }
-        strobjptr, err := mem.alloc(size_of(StringObject) + len(strdata) * 2)
-        if err != mem.Allocator_Error.None {
+        strobjptr := mem.alloc(size_of(StringObject) + len(strdata) * 2)
+        if strobjptr == nil {
             panic("Alocation faile")
         }
         strobj := cast(^StringObject)strobjptr
