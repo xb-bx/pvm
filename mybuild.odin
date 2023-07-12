@@ -17,8 +17,19 @@ main :: proc() {
         build_all()
         return
     }
-    else if os.args[1] == "programs" {
-        build_programs() 
+    else {
+        switch os.args[1] {
+            case "programs": 
+                build_programs()
+            case "pasm": 
+                build_pasm()
+            case "disasm":
+                build_disasm()
+            case "pvm":
+                build_pvm()
+            case:
+                fmt.println("Unknown option")
+        }
     }
 }
 build_all :: proc() {
