@@ -3,7 +3,15 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import "../pvm"
+typeToString :: proc(t: ^pvm.Type) -> string {
+    using pvm
+    #partial switch in t^ {
+        case PrimitiveType: return fmt.aprintf("%s", t^)
+        case RefType: return fmt.aprintf("&%v", typeToString(t.(pvm.RefType).underlaying))
+        case: panic("Unimplemented")
 
+    } 
+}
 main :: proc() {
     if len(os.args) == 1 {
         return
@@ -48,8 +56,17 @@ main :: proc() {
                 fmt.printf("%i", cast(i32)(instruction.operand))
             case .PushI64:
                 fmt.printf("%i", transmute(i64)(instruction.operand))
-            case .PushU8, .PushU16, .PushU32, .PushU64, .PushLocal, .SetLocal:
+            case .PushU8, .PushU16, .PushU32, .PushU64:
                 fmt.printf("%i", (instruction.operand))
+            case .PushLocal, .SetLocal, .RefLocal:
+                type: ^Type = nil
+                if cast(int)instruction.operand < len(fn.args) {
+                    type = fn.args[instruction.operand]
+                }
+                else {
+                    type = fn.locals[cast(int)instruction.operand - len(fn.args)]
+                }
+                fmt.printf("(%i:%v)", instruction.operand, type)
             case .Jmp, .Jtrue:
                 fmt.printf("OP_%3i", (instruction.operand))
             case .Call:
@@ -82,12 +99,13 @@ main :: proc() {
                 else {
                     type = module.typedescriptors[cast(int)instruction.operand - len(module.typeImports)]
                 }
-                fmt.print(type^)
+                fmt.print(typeToString(type))
                 
         }
         fmt.print("\n")
         
     }
+    fmt.println(fn.jitted_body.size)
     fmt.print("jitted code:")
     for i in 0..<fn.jitted_body.size {
         fmt.printf("%H", fn.jitted_body.base[i])
