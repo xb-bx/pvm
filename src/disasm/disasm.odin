@@ -8,7 +8,10 @@ typeToString :: proc(t: ^pvm.Type) -> string {
     #partial switch in t^ {
         case PrimitiveType: return fmt.aprintf("%s", t^)
         case RefType: return fmt.aprintf("&%v", typeToString(t.(pvm.RefType).underlaying))
-        case: panic("Unimplemented")
+        case CustomType: return fmt.aprintf("%s", t.(pvm.CustomType).name)
+        case ArrayType: return fmt.aprintf("[]%v", typeToString(t.(pvm.ArrayType).underlaying))
+        case:
+            panic("Unimplemented")
 
     } 
 }
