@@ -367,6 +367,32 @@ jit_compile_conv :: proc(asmm: ^x86asm.Assembler, stack: ^TypeStack, convtype: ^
     }
         
 }
+jit_compile_neg :: proc(asmm: ^x86asm.Assembler, stack: ^TypeStack) {
+    using x86asm
+    size := get_stack_size(stack)
+    t := stack_pop(stack)
+    stack_push(stack, t)
+    #partial switch t.(PrimitiveType) {
+    case .I64:
+        mov_from(asmm, Reg64.Rax, Reg64.R10, -size) 
+        neg(asmm, Reg64.Rax)
+        mov_to(asmm, Reg64.R10, Reg64.Rax, -size) 
+    case .I32:
+        mov_from(asmm, Reg32.Eax, Reg64.R10, -size) 
+        neg(asmm, Reg32.Eax)
+        mov_to(asmm, Reg64.R10, Reg32.Eax, -size) 
+    case .I16:
+        mov_from(asmm, Reg16.Ax, Reg64.R10, -size) 
+        neg(asmm, Reg16.Ax)
+        mov_to(asmm, Reg64.R10, Reg16.Ax, -size) 
+    case .I8:
+        mov_from(asmm, Reg8.Al, Reg64.R10, -size) 
+        neg(asmm, Reg8.Al)
+        mov_to(asmm, Reg64.R10, Reg8.Al, -size) 
+    case:
+        panic("FUCKSI")
+    }
+}
 jit_compile_sub :: proc(asmm: ^x86asm.Assembler, stack: ^TypeStack) {
     using x86asm  
     size := get_stack_size(stack)
@@ -844,6 +870,8 @@ jit_compile_instruction :: proc(using function: ^Function, vm: ^VM, instruction:
             jit_compile_add(asmm, stack)
         case .Sub:
             jit_compile_sub(asmm, stack)
+        case .Neg:
+            jit_compile_neg(asmm, stack)
         case .PushLocal:
             type := get_local(function, instruction.operand)
             jit_compile_pushlocal(asmm, stack, cast(i32)local[instruction.operand], type)
