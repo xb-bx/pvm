@@ -1,4 +1,4 @@
-package pvm
+package vmcore
 
 PrimitiveType :: enum {
     I64 = 0,

@@ -1,4 +1,4 @@
-package pvm
+package vmcore
 import "core:fmt"
 import "core:mem/virtual"
 import "core:strings"
@@ -17,7 +17,7 @@ jit :: proc(using vm: ^VM) -> Maybe(JitError) {
     jmp_reg(&asmm, Reg64.Rax)
     for _, module in modules {
         for func in module.functions {
-            func.jmp_body = alloc_executable(16)                
+            func.jmp_body = alloc_executable(128)                
             for b, index in asmm.bytes {
                 func.jmp_body.base[index] = b
             }

@@ -1,3 +1,10 @@
 *.mod
 *.exe
 *.bak
+*.bin
+*.o
+*.a
+build
+c-econio
+nobuild.odin
+src/modules/*/binding.odin

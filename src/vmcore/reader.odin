@@ -1,4 +1,4 @@
-package pvm
+package vmcore
 import "core:strings"
 import "core:fmt"
 Reader :: struct {

@@ -1,4 +1,4 @@
-package pvm
+package vmcore
 import "core:os"
 import "core:strings"
 import "core:fmt"
@@ -6,7 +6,9 @@ import "core:mem"
 import "core:mem/virtual"
 import "core:runtime"
 import "core:path/filepath"
+import "x86asm"
 // import "core:sys/windows"
+ctx: runtime.Context = {}
 Tuple :: struct($T1, $T2: typeid) {
     first: T1,
     second: T2,
@@ -14,6 +16,7 @@ Tuple :: struct($T1, $T2: typeid) {
 tuple :: proc(fst: $T1, snd: $T2) -> Tuple(T1, T2) {
     return Tuple(T1, T2) { first = fst, second = snd }
 }
+
 Field :: struct {
     name: string,
     type: ^Type,
@@ -122,8 +125,24 @@ FreePlace :: struct {
     offset: int,
     size: int,
 }
+replace_body :: proc(fnaddr: u64, fn: ^Function) {
+    using x86asm
+    tasm := initasm()
+    mov(&tasm, Reg64.Rax, fnaddr)
+    sub(&tasm, Reg64.Rsp, 8)
+    call_reg(&tasm, Reg64.Rax)
+    add(&tasm, Reg64.Rsp, 8)
+    ret(&tasm)
+//     jmp_reg(&tasm, Reg64.Rax)
+    for b, i in tasm.bytes {
+        fn.jmp_body.base[i] = b
+    }
+    destroyasm(&tasm)
+}
+
 DEFAULT_CHUNK_SIZE :: 1024 * 128 
 GC_ALLIGNMENT :: 128
+
 gc_init :: proc(using gc: ^GC) {
     gc.chunks = make([dynamic]^Chunk)
     gc.free_places = {}

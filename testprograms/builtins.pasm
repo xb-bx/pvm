@@ -86,6 +86,15 @@ fn rand(min i64 max i64) i64
     pushi64 1000
     ret
 end
+fn randi32(min i32 max i32) i32 
+    pushlocal max
+    conv i64
+    pushlocal min
+    conv i64
+    call rand
+    conv i32
+    ret
+end
 fn boolToI64(b bool) i64 
     pushlocal b
     jtrue t
@@ -95,3 +104,4 @@ fn boolToI64(b bool) i64
     pushi64 1
     ret
 end
+

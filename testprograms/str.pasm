@@ -1,4 +1,4 @@
-module test 
+module str 
 import builtins
 import fn println from builtins
 

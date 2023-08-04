@@ -1,4 +1,4 @@
-package pvm
+package vmcore
 
 function_not_found :: proc(name: string) -> FunctionNotFound {
     return FunctionNotFound{
