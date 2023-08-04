@@ -2,14 +2,15 @@ package disasm
 import "core:fmt"
 import "core:os"
 import "core:strings"
+import "../vmcore"
 import "../pvm"
-typeToString :: proc(t: ^pvm.Type) -> string {
-    using pvm
+typeToString :: proc(t: ^vmcore.Type) -> string {
+    using vmcore
     #partial switch in t^ {
         case PrimitiveType: return fmt.aprintf("%s", t^)
-        case RefType: return fmt.aprintf("&%v", typeToString(t.(pvm.RefType).underlaying))
-        case CustomType: return fmt.aprintf("%s", t.(pvm.CustomType).name)
-        case ArrayType: return fmt.aprintf("[]%v", typeToString(t.(pvm.ArrayType).underlaying))
+        case RefType: return fmt.aprintf("&%v", typeToString(t.(vmcore.RefType).underlaying))
+        case CustomType: return fmt.aprintf("%s", t.(vmcore.CustomType).name)
+        case ArrayType: return fmt.aprintf("[]%v", typeToString(t.(vmcore.ArrayType).underlaying))
         case:
             panic("Unimplemented")
 
@@ -19,7 +20,7 @@ main :: proc() {
     if len(os.args) == 1 {
         return
     }
-    using pvm    
+    using vmcore    
     pvm.set_formatter();
     vm := initvm()
     module, err := load_module(&vm, os.args[1])

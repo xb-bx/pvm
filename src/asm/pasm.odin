@@ -1,4 +1,5 @@
 package pasm
+import "../vmcore"
 import "../pvm"
 
 import "core:os"
@@ -84,10 +85,10 @@ Program :: struct {
     functionImports: [dynamic]Import,
     typeDefinitions: [dynamic]Type,
     functionDefinitions: [dynamic]Function,
-    typeDescriptors: map[string]pvm.Tuple(int, [dynamic]u8),
+    typeDescriptors: map[string]vmcore.Tuple(int, [dynamic]u8),
     strings: [dynamic]string,
     strings_map: map[string]int,
-    vm: pvm.VM,
+    vm: vmcore.VM,
 }
 read_file_to_string :: proc(file: string) -> (res: []rune, oky: bool) {
     handle, err := os.open(file)
@@ -159,55 +160,55 @@ keywords := map[string]string {
     "locals" = "locals",
     "from" = "from",
 }
-instructions := map[string]pvm.OpCode {
-    "pushi64" = pvm.OpCode.PushI64,
-    "pushu64" = pvm.OpCode.PushU64,
-    "pushi32" = pvm.OpCode.PushI32,
-    "pushu32" = pvm.OpCode.PushU32,
-    "pushi16" = pvm.OpCode.PushI16,
-    "pushu16" = pvm.OpCode.PushU16,
-    "pushi8" = pvm.OpCode.PushI8,
-    "pushu8" = pvm.OpCode.PushU8,
-    "pushstr" = pvm.OpCode.PushString,
-    "pushlocal" = pvm.OpCode.PushLocal,
-    "pop" = pvm.OpCode.Pop,
-    "add" = pvm.OpCode.Add,
-    "sub" = pvm.OpCode.Sub,
-    "mul" = pvm.OpCode.Mul,
-    "div" = pvm.OpCode.Div,
-    "setlocal" = pvm.OpCode.SetLocal,
-    "jmp" = pvm.OpCode.Jmp,
-    "jtrue" = pvm.OpCode.Jtrue,
-    "gt" = pvm.OpCode.GT,
-    "lt" = pvm.OpCode.LT,
-    "eq" = pvm.OpCode.EQ,
-    "not" = pvm.OpCode.Not,
-    "box" = pvm.OpCode.Box,
-    "unbox" = pvm.OpCode.Unbox,
-    "ret" = pvm.OpCode.Ret,
-    "neg" = pvm.OpCode.Neg,
-    "call" = pvm.OpCode.Call,
-    "pushtrue" = pvm.OpCode.PushTrue,
-    "pushfalse" = pvm.OpCode.PushFalse,
-    "newobj" = pvm.OpCode.NewObj,
-    "getfield" = pvm.OpCode.GetField,
-    "getfieldref" = pvm.OpCode.GetFieldRef,
-    "getlength" = pvm.OpCode.GetLength,
-    "setfield" = pvm.OpCode.SetField,
-    "getindex" = pvm.OpCode.GetIndex,
-    "getindexref" = pvm.OpCode.GetIndexRef,
-    "setindex" = pvm.OpCode.SetIndex,
-    "reflocal" = pvm.OpCode.RefLocal,
-    "storeref" = pvm.OpCode.StoreRef,
-    "deref" = pvm.OpCode.Deref,
-    "torawptr" = pvm.OpCode.ToRawPtr,
-    "isinstanceof" = pvm.OpCode.IsInstanceOf,
-    "unboxas" = pvm.OpCode.UnboxAs,
-    "pushnull" = pvm.OpCode.PushNull,
-    "cast" = pvm.OpCode.Cast,
-    "conv" = pvm.OpCode.Conv,
-    "pushchar" = pvm.OpCode.PushChar,
-    "dup" = pvm.OpCode.Dup,
+instructions := map[string]vmcore.OpCode {
+    "pushi64" = vmcore.OpCode.PushI64,
+    "pushu64" = vmcore.OpCode.PushU64,
+    "pushi32" = vmcore.OpCode.PushI32,
+    "pushu32" = vmcore.OpCode.PushU32,
+    "pushi16" = vmcore.OpCode.PushI16,
+    "pushu16" = vmcore.OpCode.PushU16,
+    "pushi8" = vmcore.OpCode.PushI8,
+    "pushu8" = vmcore.OpCode.PushU8,
+    "pushstr" = vmcore.OpCode.PushString,
+    "pushlocal" = vmcore.OpCode.PushLocal,
+    "pop" = vmcore.OpCode.Pop,
+    "add" = vmcore.OpCode.Add,
+    "sub" = vmcore.OpCode.Sub,
+    "mul" = vmcore.OpCode.Mul,
+    "div" = vmcore.OpCode.Div,
+    "setlocal" = vmcore.OpCode.SetLocal,
+    "jmp" = vmcore.OpCode.Jmp,
+    "jtrue" = vmcore.OpCode.Jtrue,
+    "gt" = vmcore.OpCode.GT,
+    "lt" = vmcore.OpCode.LT,
+    "eq" = vmcore.OpCode.EQ,
+    "not" = vmcore.OpCode.Not,
+    "box" = vmcore.OpCode.Box,
+    "unbox" = vmcore.OpCode.Unbox,
+    "ret" = vmcore.OpCode.Ret,
+    "neg" = vmcore.OpCode.Neg,
+    "call" = vmcore.OpCode.Call,
+    "pushtrue" = vmcore.OpCode.PushTrue,
+    "pushfalse" = vmcore.OpCode.PushFalse,
+    "newobj" = vmcore.OpCode.NewObj,
+    "getfield" = vmcore.OpCode.GetField,
+    "getfieldref" = vmcore.OpCode.GetFieldRef,
+    "getlength" = vmcore.OpCode.GetLength,
+    "setfield" = vmcore.OpCode.SetField,
+    "getindex" = vmcore.OpCode.GetIndex,
+    "getindexref" = vmcore.OpCode.GetIndexRef,
+    "setindex" = vmcore.OpCode.SetIndex,
+    "reflocal" = vmcore.OpCode.RefLocal,
+    "storeref" = vmcore.OpCode.StoreRef,
+    "deref" = vmcore.OpCode.Deref,
+    "torawptr" = vmcore.OpCode.ToRawPtr,
+    "isinstanceof" = vmcore.OpCode.IsInstanceOf,
+    "unboxas" = vmcore.OpCode.UnboxAs,
+    "pushnull" = vmcore.OpCode.PushNull,
+    "cast" = vmcore.OpCode.Cast,
+    "conv" = vmcore.OpCode.Conv,
+    "pushchar" = vmcore.OpCode.PushChar,
+    "dup" = vmcore.OpCode.Dup,
 }
 
 tokenizer_destroy :: proc(using tokenizer: ^Tokenizer) {
@@ -443,10 +444,10 @@ program_init :: proc(using program: ^Program) {
     functionImports = make([dynamic]Import)
     typeDefinitions = make([dynamic]Type)
     functionDefinitions = make([dynamic]Function);
-    typeDescriptors = make(map[string]pvm.Tuple(int, [dynamic]u8))
+    typeDescriptors = make(map[string]vmcore.Tuple(int, [dynamic]u8))
     strings = make([dynamic]string)
     strings_map = make(map[string]int)
-    vm = pvm.initvm()
+    vm = vmcore.initvm()
 }
 parser_init :: proc(using parser: ^Parser) {
     position = 0
@@ -647,42 +648,42 @@ compile :: proc(using program: ^Program, tokens: []Token) -> (res: []u8, success
         delete(result)
     }
     des, _ := create_type_descriptor(program, "i64")
-    typeDescriptors["i64"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["i64"] = vmcore.tuple(len(typeDescriptors), des)
     des, _ = create_type_descriptor(program, "u64")
-    typeDescriptors["u64"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["u64"] = vmcore.tuple(len(typeDescriptors), des)
     
     des, _ = create_type_descriptor(program, "i32")
-    typeDescriptors["i32"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["i32"] = vmcore.tuple(len(typeDescriptors), des)
     des, _ = create_type_descriptor(program, "u32")
-    typeDescriptors["u32"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["u32"] = vmcore.tuple(len(typeDescriptors), des)
 
     des, _ = create_type_descriptor(program, "i16")
-    typeDescriptors["i16"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["i16"] = vmcore.tuple(len(typeDescriptors), des)
     des, _ = create_type_descriptor(program, "u16")
-    typeDescriptors["u16"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["u16"] = vmcore.tuple(len(typeDescriptors), des)
 
     des, _ = create_type_descriptor(program, "i8")
-    typeDescriptors["i8"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["i8"] = vmcore.tuple(len(typeDescriptors), des)
     des, _ = create_type_descriptor(program, "u8")
-    typeDescriptors["u8"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["u8"] = vmcore.tuple(len(typeDescriptors), des)
     
     des, _ = create_type_descriptor(program, "f64")
-    typeDescriptors["f64"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["f64"] = vmcore.tuple(len(typeDescriptors), des)
     des, _ = create_type_descriptor(program, "f32")
-    typeDescriptors["f32"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["f32"] = vmcore.tuple(len(typeDescriptors), des)
     
     des, _ = create_type_descriptor(program, "any")
-    typeDescriptors["any"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["any"] = vmcore.tuple(len(typeDescriptors), des)
 
     des, _ = create_type_descriptor(program, "bool")
-    typeDescriptors["bool"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["bool"] = vmcore.tuple(len(typeDescriptors), des)
     des, _ = create_type_descriptor(program, "void")
-    typeDescriptors["void"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["void"] = vmcore.tuple(len(typeDescriptors), des)
 
     des, _ = create_type_descriptor(program, "char")
-    typeDescriptors["char"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["char"] = vmcore.tuple(len(typeDescriptors), des)
     des, _ = create_type_descriptor(program, "string")
-    typeDescriptors["string"] = pvm.tuple(len(typeDescriptors), des)
+    typeDescriptors["string"] = vmcore.tuple(len(typeDescriptors), des)
 
     for t in tokens {
         if t.type == TokenType.TypeDescriptor {
@@ -692,14 +693,14 @@ compile :: proc(using program: ^Program, tokens: []Token) -> (res: []u8, success
                 if !okk {
                     return nil, false
                 }
-                typeDescriptors[t.value] = pvm.tuple(len(typeDescriptors), desc)
+                typeDescriptors[t.value] = vmcore.tuple(len(typeDescriptors), desc)
             }
         }
         else if t.type == TokenType.Id {
             if d, found := typeDescriptors[t.value]; !found {
                 desc, okk := create_type_descriptor(program, t.value)
                 if okk {
-                    typeDescriptors[t.value] = pvm.tuple(len(typeDescriptors), desc)
+                    typeDescriptors[t.value] = vmcore.tuple(len(typeDescriptors), desc)
                 }
             }
         }
@@ -751,7 +752,7 @@ compile :: proc(using program: ^Program, tokens: []Token) -> (res: []u8, success
         append_u32(&result, cast(u32)index)
         append_string(&result, fnimport.item.value)
     }
-    fndefsoffsets := make(map[string]pvm.Tuple(int, int))
+    fndefsoffsets := make(map[string]vmcore.Tuple(int, int))
     append_u32(&result, cast(u32)len(functionDefinitions));
     for fndef in functionDefinitions {
         append_string(&result, fndef.name.value)
@@ -768,7 +769,7 @@ compile :: proc(using program: ^Program, tokens: []Token) -> (res: []u8, success
         append_u32(&result, 0)
         length := len(result)
         append_u32(&result, 0)
-        fndefsoffsets[fndef.name.value] = pvm.tuple(start, length)
+        fndefsoffsets[fndef.name.value] = vmcore.tuple(start, length)
     }
     append_u32(&result, cast(u32)len(strings))
     for str in strings {
@@ -782,8 +783,8 @@ compile :: proc(using program: ^Program, tokens: []Token) -> (res: []u8, success
     }
 
     for mod in program.imports {
-        _, err := pvm.load_module(&vm, mod.item.value) 
-        if _, ok := err.(pvm.None); !ok {
+        _, err := vmcore.load_module(&vm, mod.item.value) 
+        if _, ok := err.(vmcore.None); !ok {
             fmt.println("WARNING: Failed to load module", mod.item.value)
         }
     }
@@ -793,12 +794,12 @@ compile :: proc(using program: ^Program, tokens: []Token) -> (res: []u8, success
     }
     return result[:], true
 }
-append_type_descriptors :: proc(bytes: ^[dynamic]u8, descriptors: map[string]pvm.Tuple(int, [dynamic]u8)) {
-    descr := make([dynamic]pvm.Tuple(int, [dynamic]u8, len(descriptors)))
+append_type_descriptors :: proc(bytes: ^[dynamic]u8, descriptors: map[string]vmcore.Tuple(int, [dynamic]u8)) {
+    descr := make([dynamic]vmcore.Tuple(int, [dynamic]u8, len(descriptors)))
     for _, v in descriptors {
         append(&descr, v)
     }
-    slice.sort_by_key(descr[:], proc(d: pvm.Tuple(int, [dynamic]u8)) -> int { return d.first })
+    slice.sort_by_key(descr[:], proc(d: vmcore.Tuple(int, [dynamic]u8)) -> int { return d.first })
     for desc in descr {
         append_bytes(bytes, desc.second)
     }
@@ -807,11 +808,11 @@ parse_error :: proc(str:string, token: Token) {
     fmt.printf("ERROR: %v at %v:%v\n", str, token.line, token.col)
     os.exit(1)
 }
-compile_body :: proc(using program: ^Program, function: ^Function, bytes: ^[dynamic]u8, offsets: pvm.Tuple(int, int)) {
+compile_body :: proc(using program: ^Program, function: ^Function, bytes: ^[dynamic]u8, offsets: vmcore.Tuple(int, int)) {
     fmt.println("Compiling", function.name.value)
     start := len(bytes)
     labels := make(map[string]int)
-    labelplaces := make([dynamic]pvm.Tuple(string, int))
+    labelplaces := make([dynamic]vmcore.Tuple(string, int))
     instrcount := 0
     for instruction in function.body {
         opcode, ok := instructions[instruction.opcode.value]
@@ -852,7 +853,7 @@ compile_body :: proc(using program: ^Program, function: ^Function, bytes: ^[dyna
                                 }
                                 fieldindex := -1
                                 
-                                for fld, index in vmtype.(pvm.CustomType).fields {
+                                for fld, index in vmtype.(vmcore.CustomType).fields {
                                     if fld.name == instruction.operand.(FieldOperand).field{
                                         fieldindex = index 
                                         break
@@ -977,7 +978,7 @@ compile_body :: proc(using program: ^Program, function: ^Function, bytes: ^[dyna
                                 append_u32(bytes, cast(u32)lbl)
                             }
                             else {
-                                append(&labelplaces, pvm.tuple(op.(Id).value, len(bytes)))
+                                append(&labelplaces, vmcore.tuple(op.(Id).value, len(bytes)))
                                 append_u32(bytes, 0)
                             }
                             case None, TypeDescriptor, FieldOperand, CharOperand, StringOperand:
@@ -1152,22 +1153,22 @@ append_u64 :: proc(bytes: ^[dynamic]u8, value: u64) {
     append(bytes, cast(u8)((value >> 48) & 0xff))
     append(bytes, cast(u8)((value >> 56) & 0xff))
 }
-primitives := map[string]pvm.PrimitiveType {
-    "i64" = pvm.PrimitiveType.I64,
-    "u64" = pvm.PrimitiveType.U64,
-    "i32" = pvm.PrimitiveType.I32,
-    "u32" = pvm.PrimitiveType.U32,
-    "i16" = pvm.PrimitiveType.I16,
-    "u16" = pvm.PrimitiveType.U16,
-    "i8" = pvm.PrimitiveType.I8,
-    "u8" = pvm.PrimitiveType.U8,
-    "f64" = pvm.PrimitiveType.F64,
-    "f32" = pvm.PrimitiveType.F32,
-    "any" = pvm.PrimitiveType.Any,
-    "char" = pvm.PrimitiveType.Char,
-    "string" = pvm.PrimitiveType.String,
-    "void" = pvm.PrimitiveType.Void,
-    "bool" = pvm.PrimitiveType.Boolean,
+primitives := map[string]vmcore.PrimitiveType {
+    "i64" = vmcore.PrimitiveType.I64,
+    "u64" = vmcore.PrimitiveType.U64,
+    "i32" = vmcore.PrimitiveType.I32,
+    "u32" = vmcore.PrimitiveType.U32,
+    "i16" = vmcore.PrimitiveType.I16,
+    "u16" = vmcore.PrimitiveType.U16,
+    "i8" = vmcore.PrimitiveType.I8,
+    "u8" = vmcore.PrimitiveType.U8,
+    "f64" = vmcore.PrimitiveType.F64,
+    "f32" = vmcore.PrimitiveType.F32,
+    "any" = vmcore.PrimitiveType.Any,
+    "char" = vmcore.PrimitiveType.Char,
+    "string" = vmcore.PrimitiveType.String,
+    "void" = vmcore.PrimitiveType.Void,
+    "bool" = vmcore.PrimitiveType.Boolean,
 }
 create_type_descriptor :: proc(using program: ^Program, descriptor: string) -> ([dynamic]u8, bool) {
     res := make([dynamic]u8)
