@@ -35,6 +35,9 @@ StringObject :: struct {
     header: ObjectHeader,
     length: i64,
 }
+get_string_bytes_ptr :: proc "contextless" (str: ^StringObject) -> [^]u16 {
+    return transmute([^]u16)(transmute(u64)str + size_of(StringObject))
+}
 Function :: struct {
     name: string,
     args: []^Type,
