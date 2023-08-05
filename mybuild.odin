@@ -32,7 +32,7 @@ generate_binding :: proc(path: string) {
     strings.write_string(&builder, "__bind :: proc(vmp: ^vmcore.VM) {\n")
     strings.write_string(&builder, "    vm = vmp\n")
     fmt.sbprintf(&builder, "    mod, is_mod_found := vm.modules[\"%s\"]\n", filepath.base(path))
-    fmt.sbprintf(&builder, "    if !is_mod_found {{ fmt.println(\"Failed to bind module \\\"%s\\\" \"); return }}\n", filepath.base(path))
+    fmt.sbprintf(&builder, "    if !is_mod_found {{ return }}\n")
     fmt.sbprintf(&builder, "    for fn in mod.functions {{\n")
     for name, file in pkg.files {
         for decl in file.decls {
