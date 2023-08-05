@@ -13,6 +13,14 @@ Tuple :: struct($T1, $T2: typeid) {
     first: T1,
     second: T2,
 }
+get_char:: proc(array: ^StringObject, index: i64) -> u16 {
+    items := transmute([^]u16)(transmute(u64)array + size_of(StringObject))
+    return items[index]
+}
+get_item :: proc($T: typeid, array: ^ArrayHeader, index: i64) -> T {
+    items := transmute([^]T)(transmute(u64)array + size_of(ArrayHeader))
+    return items[index]
+}
 tuple :: proc(fst: $T1, snd: $T2) -> Tuple(T1, T2) {
     return Tuple(T1, T2) { first = fst, second = snd }
 }
@@ -52,6 +60,7 @@ Instruction :: struct {
     opcode: OpCode,
     operand: u64,
 }
+
 OpCode :: enum {
     PushI64,
     PushU64,
@@ -122,6 +131,7 @@ Chunk :: struct {
 GC :: struct {
     chunks: [dynamic]^Chunk,
     free_places: [dynamic]FreePlace,
+    temp_roots: [dynamic]^ObjectHeader,
 }
 FreePlace :: struct {
     chunk: ^Chunk,
@@ -150,12 +160,29 @@ gc_init :: proc(using gc: ^GC) {
     gc.chunks = make([dynamic]^Chunk)
     gc.free_places = {}
     gc.free_places = make([dynamic]FreePlace)
+    gc.temp_roots = make([dynamic]^ObjectHeader)
     gc_new_chunk(gc)
 }
 alloced := 0
+gc_alloc_string :: proc(vm: ^VM, size: i64) -> ^StringObject {
+    act_size := size_of(StringObject) + size * 2
+    resultString := transmute(^StringObject)gc_alloc(&vm.gc, cast(int)(act_size))
+    resultString.header.type = vm.primitiveTypes[PrimitiveType.String]
+    resultString.header.size = cast(i32)act_size
+    resultString.length = size 
+    return resultString
+}
+gc_alloc_array :: proc(vm: ^VM, size: i64, type: ^Type) -> ^ArrayHeader {
+    act_size := size_of(ArrayHeader) + size * cast(i64)get_type_size(type)
+    resultString := transmute(^ArrayHeader)gc_alloc(&vm.gc, cast(int)(act_size))
+    resultString.header.type = type
+    resultString.header.size = cast(i32)act_size
+    resultString.length = size 
+    return resultString
+}
 gc_alloc :: proc(using gc: ^GC, size: int) -> rawptr {
     alloced += 1
-    alligned_size := 0 
+    alligned_size := size 
     if size % GC_ALLIGNMENT != 0 {
         alligned_size = size + GC_ALLIGNMENT - size % GC_ALLIGNMENT
     } 
@@ -165,17 +192,32 @@ gc_alloc :: proc(using gc: ^GC, size: int) -> rawptr {
         place = gc_find_freeplace(gc, alligned_size)
     }
     if place == nil {
-        gc_new_chunk(gc, alligned_size)
+        gc_new_chunk(gc)
         place = gc_find_freeplace(gc, alligned_size)
+    }
+    if p, ok := place.?; !ok || p.size < size {
+        fmt.println("MY ASS IS ON FIRE", p.size, size, p)
+        panic("")
     }
     res := transmute(rawptr)(transmute(int)place.(FreePlace).chunk.data + place.(FreePlace).offset)
     return res 
+}
+gc_add_temp_root :: proc(using gc: ^GC, ptr: ^ObjectHeader) {
+    append(&gc.temp_roots, ptr)
+}
+gc_remove_last_roots :: proc(using gc: ^GC, count: int) {
+    start := len(gc.temp_roots) - count
+    remove_range(&gc.temp_roots, start, start + count)
 }
 gc_collect :: proc(using gc: ^GC) {
 //     freq: windows.LARGE_INTEGER = {}
 //     windows.QueryPerformanceFrequency(&freq)
 //     start: windows.LARGE_INTEGER = {}
 //     windows.QueryPerformanceCounter(&start)
+    for temp_root in temp_roots {
+        gc_visit_pointer(gc, transmute(int)temp_root)
+//         gc_visit_object(gc, temp_root.type, transmute(int)temp_root)
+    }
     for frame in stacktrace {
 // 
 //         framedata := transmute([^]int)(transmute(int)frame.stack - cast(int)frame.stack_size)
