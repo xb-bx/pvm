@@ -55,9 +55,6 @@ concat :: proc "c" (array: ^vmcore.ArrayHeader, join: ^vmcore.StringObject) -> ^
     context = ctx
     gc_add_temp_root(&vm.gc, &array.header)
     gc_add_temp_root(&vm.gc, &join.header)
-    if array == nil {
-        fmt.println("fuck my ass")
-    }
     totallength: i64 = 0
     for i in 0..<array.length {
         totallength += get_item(^StringObject, array, i).length
@@ -71,9 +68,6 @@ concat :: proc "c" (array: ^vmcore.ArrayHeader, join: ^vmcore.StringObject) -> ^
     pos: i64 = 0
     for i in 0..<array.length {
         str := get_item(^StringObject, array, i)
-        if str == nil {
-            fmt.println("OOPSIE")
-        }
         for j in 0..<str.length {
             chars[pos + j] = get_char(str, j) 
         }
