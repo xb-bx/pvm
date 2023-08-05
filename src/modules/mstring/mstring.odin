@@ -20,23 +20,25 @@ split :: proc "c" (str: ^vmcore.StringObject, delimiter: u16) -> ^vmcore.ArrayHe
     start := 0
     leng := 0
     for i in 0..<str.length {
+        leng += 1
         if bptr[i] == delimiter {
-            if leng != 0 {
+            if leng != 1 {
+                leng -= 1
                 ptr := gc_alloc_string(vm, cast(i64)leng)
                 newstr := transmute([^]u16)(transmute(u64)ptr + size_of(StringObject))
-                for j in start..<leng {
+                for j in start..<start + leng {
                     newstr[j - start] = bptr[j]
                 }
                 append(&splits, transmute(^StringObject)ptr)
+                leng = 0
             }
             start = int(i) + 1
         }
-        leng += 1
     }
     if leng != 0 {
         ptr := gc_alloc_string(vm, cast(i64)leng)
         newstr := transmute([^]u16)(transmute(u64)ptr + size_of(StringObject))
-        for j in start..<leng {
+        for j in start..<start + leng {
             newstr[j - start] = bptr[j]
         }
         append(&splits, transmute(^StringObject)ptr)
