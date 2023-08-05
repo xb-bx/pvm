@@ -8,10 +8,11 @@ fn getch() char
     pushchar '0'
     ret
 end
-fn gcmem() i64
+fn gc_mem() i64
 pushi64 1337
 ret
 end
+
 fn println(str string) void
 ret
 end

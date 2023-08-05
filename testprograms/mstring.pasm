@@ -1,5 +1,9 @@
 module mstring
-
+fn concat(array $string join string) string
+    pushnull 
+    cast string
+    ret
+end
 fn index_of (str string c char) i64 
     pushi64 0
     ret

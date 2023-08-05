@@ -51,6 +51,7 @@ printi64 :: proc "c" (arg: i64) {
     fmt.println(arg)
 }
 printbuf: strings.Builder = strings.builder_make_len(128)
+
 printchar :: proc "c" (arg: i64) {
     context = vmcore.ctx
     strings.write_rune(&printbuf, cast(rune)(arg & 0xffff))
